@@ -1,20 +1,24 @@
-﻿import './env';
+﻿// MUST be first - force IPv4 before any network modules load
+import './ipv4-first';
+import './env';
 import * as schema from "@shared/schema";
 import { randomUUID } from 'crypto';
-import dns from 'dns';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import postgres from 'postgres';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
-
-// Force IPv4 DNS resolution to avoid IPv6 ENETUNREACH errors on Render
-dns.setDefaultResultOrder('ipv4first');
 
 // env helpers
 const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
 
 const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
 const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
+
+// Debug: log environment detection
+console.log(`DB_PATH value: ${env('DB_PATH', '<unset>')}`);
+console.log(`RENDER detected: ${runningOnRender ? 'yes' : 'no'}`);
+console.log(`NODE_ENV: ${process.env.NODE_ENV || '<unset>'}`);
+console.log(`DATABASE_URL set: ${process.env.DATABASE_URL ? 'yes (length: ' + process.env.DATABASE_URL.length + ')' : 'no'}`);
 
 // Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
 // IMPORTANT: For Render free tier we do NOT have a persistent disk; choose Postgres (DATABASE_URL).
@@ -33,6 +37,9 @@ const looksLikeDefaultDevSqlite = (u: string) => {
 const databaseUrl = env('DATABASE_URL', '');
 const explicitWriteUrl = env('DATABASE_URL_WRITE', '');
 
+// On Render, ALWAYS use DATABASE_URL if it looks like Postgres
+const looksLikePostgres = (u: string) => u.startsWith('postgres://') || u.startsWith('postgresql://');
+
 // Option A (recommended): Postgres on Render.
 // If we're on Render + production, require a non-SQLite DATABASE_URL (or DATABASE_URL_WRITE).
 if (isProduction && runningOnRender) {
@@ -44,27 +51,35 @@ if (isProduction && runningOnRender) {
     console.error('Fatal: Render production requires Postgres. Set DATABASE_URL to a Postgres connection string (Supabase/Neon).');
     // eslint-disable-next-line no-console
     console.error('Do not use SQLite (file:./dev.sqlite) on Render free tier (no persistent disk).');
+    console.error(`Current DATABASE_URL: ${databaseUrl ? maskDbUrl(databaseUrl) : '<empty>'}`);
     process.exit(1);
   }
 }
 
+// If DATABASE_URL looks like Postgres, use it directly (ignore DB_PATH/SQLite fallback)
 // If DB_PATH is configured and DATABASE_URL is empty or still pointing at the local default,
 // prefer DB_PATH so Render SQLite deployments don't accidentally use ./dev.sqlite.
-const inferredWriteUrl = (sqlitePath && (!databaseUrl || looksLikeDefaultDevSqlite(databaseUrl)))
-  ? sqliteFallbackUrl
-  : (databaseUrl || sqliteFallbackUrl);
+let inferredWriteUrl: string;
+if (looksLikePostgres(databaseUrl)) {
+  inferredWriteUrl = databaseUrl;
+} else if (sqlitePath && (!databaseUrl || looksLikeDefaultDevSqlite(databaseUrl))) {
+  inferredWriteUrl = sqliteFallbackUrl;
+} else {
+  inferredWriteUrl = databaseUrl || sqliteFallbackUrl;
+}
 
 const baseWriteUrl = explicitWriteUrl || inferredWriteUrl;
-const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
+// Helper to mask password in URL for logging
 const maskDbUrl = (url: string) => {
   try {
     const u = new URL(url);
     return `${u.protocol}//${u.host}${u.pathname}`;
   } catch {
-    return url.replace(/:\/\/.*@/, '://****@');
+    return url.replace(/:\/\/[^@]*@/, '://****@');
   }
 };
+const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
 const ensureParams = (u: string, extra: Record<string, string>) => {
   try {

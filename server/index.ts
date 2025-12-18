@@ -1,4 +1,6 @@
-﻿// Load env from local or parent workspace before anything else
+﻿// MUST be first - force IPv4 DNS before any network modules load
+import './ipv4-first';
+// Load env from local or parent workspace before anything else
 import './env';
 import express, { type Request, Response, NextFunction } from "express";
 import compression from 'compression';
