@@ -227,8 +227,20 @@ if (isSqlite) {
   /* eslint-disable no-console */
   console.log(`Using database at: file:${sqliteFile}`);
   console.log(`Using database (sqlite): ${maskDbUrl(baseWriteUrl)}`);
-  console.log(`DB_PATH is ${process.env.DB_PATH ? 'set' : 'unset'}`);
+  console.log(`DB_PATH value: ${process.env.DB_PATH ? process.env.DB_PATH : '<unset>'}`);
+  console.log(`RENDER detected: ${process.env.RENDER || process.env.RENDER_EXTERNAL_URL ? 'yes' : 'no'}`);
   /* eslint-enable no-console */
+
+  // Guardrail: in production (especially on Render), accidentally using ./dev.sqlite
+  // leads to missing schema and non-persistent data.
+  if ((process.env.NODE_ENV || '').toLowerCase() === 'production') {
+    const usingDefaultDevSqlite = sqliteFile === './dev.sqlite' || sqliteFile === 'dev.sqlite';
+    if (usingDefaultDevSqlite && !process.env.DB_PATH) {
+      console.error('Fatal: DB_PATH is not set in production, and the app would use ./dev.sqlite.');
+      console.error('Set DB_PATH to a persistent path (Render disk mount), e.g. /data/database.sqlite.');
+      process.exit(1);
+    }
+  }
 
   const sqliteDb = new Database(sqliteFile);
 
