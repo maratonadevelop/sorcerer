@@ -172,13 +172,12 @@ app.use((req, res, next) => {
   });
   // On some platforms (Windows) the `reusePort` option is not supported.
   // Use the simpler listen signature for cross-platform compatibility.
-  // Omit the explicit host so Node can bind to the system's default
-  // unspecified address. This improves compatibility when `localhost`
-  // resolves to an IPv6 address (::1) in some environments (VS Code
-  // Simple Browser may prefer IPv6), avoiding "connection refused"
-  // errors that occur when the server only listens on IPv4 (0.0.0.0).
-  server.listen(port, () => {
-    log(`serving on port ${port}`);
+  // For cloud platforms like Render, we MUST bind to 0.0.0.0 explicitly
+  // so the port scanner can detect the open port.
+  // In development, omit host for better IPv6 compatibility.
+  const host = process.env.RENDER ? '0.0.0.0' : undefined;
+  server.listen(port, host as any, () => {
+    log(`serving on port ${port}${host ? ` (host: ${host})` : ''}`);
   });
 })();
 
