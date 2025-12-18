@@ -143,7 +143,7 @@ export function getSession() {
   // Local fallback if nothing else matched: sqlite-backed session store
   const SQLiteStore = connectSqlite3(session);
   // Allow separate auth DB file if AUTH_DB_FILE is set (default dev.sqlite)
-  const authDbFile = process.env.AUTH_DB_FILE || 'dev.sqlite';
+  const authDbFile = process.env.AUTH_DB_FILE || process.env.DB_PATH || 'dev.sqlite';
   const resolvedAuthDbFile = path.isAbsolute(authDbFile)
     ? authDbFile
     : path.resolve(process.cwd(), authDbFile);

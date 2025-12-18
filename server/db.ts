@@ -9,8 +9,14 @@ import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 // env helpers
 const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
 
-// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite
-const baseWriteUrl = env('DATABASE_URL_WRITE', env('DATABASE_URL', 'file:./dev.sqlite'));
+// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
+// IMPORTANT: On Render we rely on DB_PATH (e.g. /data/database.sqlite) for SQLite deployments.
+const sqlitePath = env('DB_PATH', '');
+const sqliteFallbackUrl = sqlitePath
+  ? (sqlitePath.startsWith('file:') ? sqlitePath : `file:${sqlitePath}`)
+  : 'file:./dev.sqlite';
+
+const baseWriteUrl = env('DATABASE_URL_WRITE', env('DATABASE_URL', sqliteFallbackUrl));
 const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
 const maskDbUrl = (url: string) => {
