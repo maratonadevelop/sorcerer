@@ -1,6 +1,5 @@
 ﻿// Load env from local or parent workspace before anything else
 import './env';
-import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import compression from 'compression';
 import cors from "cors";
@@ -162,6 +161,15 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
+  // Ensure listen errors are surfaced clearly (e.g., EADDRINUSE) instead of crashing
+  // with an unhandled 'error' event.
+  server.on('error', (err: any) => {
+    console.error('Server listen error:', err?.code || err?.message || err);
+    if (err?.code === 'EADDRINUSE') {
+      console.error(`Port ${port} is already in use. Set PORT to another value or stop the other process.`);
+    }
+    process.exit(1);
+  });
   // On some platforms (Windows) the `reusePort` option is not supported.
   // Use the simpler listen signature for cross-platform compatibility.
   // Omit the explicit host so Node can bind to the system's default

@@ -11,7 +11,8 @@ const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
 
 // Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
 // IMPORTANT: On Render we rely on DB_PATH (e.g. /data/database.sqlite) for SQLite deployments.
-const sqlitePath = env('DB_PATH', '');
+const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
+const sqlitePath = env('DB_PATH', '') || (runningOnRender ? '/data/database.sqlite' : '');
 const sqliteFallbackUrl = sqlitePath
   ? (sqlitePath.startsWith('file:') ? sqlitePath : `file:${sqlitePath}`)
   : 'file:./dev.sqlite';
