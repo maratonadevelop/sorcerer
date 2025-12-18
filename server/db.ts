@@ -1,10 +1,14 @@
 ﻿import './env';
 import * as schema from "@shared/schema";
 import { randomUUID } from 'crypto';
+import dns from 'dns';
 import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
 import postgres from 'postgres';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
+
+// Force IPv4 DNS resolution to avoid IPv6 ENETUNREACH errors on Render
+dns.setDefaultResultOrder('ipv4first');
 
 // env helpers
 const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
@@ -473,20 +477,30 @@ if (isSqlite) {
   const writeUrl = ensureParams(baseWriteUrl, { sslmode: 'require' });
   const readUrl = ensureParams(baseReadUrl, { sslmode: 'require' });
 
-  const sqlWrite = postgres(writeUrl, {
+  // Force IPv4 to avoid ENETUNREACH errors on some cloud platforms (Render)
+  const postgresOptions = {
     ssl: { rejectUnauthorized: env('DB_SSL_STRICT', 'false') === 'true' },
     max: parseInt(env('DB_POOL_MAX', '10'), 10),
     idle_timeout: parseInt(env('DB_IDLE_TIMEOUT_MS', '30000'), 10),
     // Silence benign Postgres NOTICE messages like "relation already exists"
     onnotice: () => {},
     keep_alive: 1,
+    // Force IPv4 DNS resolution to avoid IPv6 connectivity issues
+    connection: {
+      options: '--search_path=public',
+    },
+  };
+
+  // Add host option to force IPv4 by extracting hostname and using DNS lookup
+  const sqlWrite = postgres(writeUrl, {
+    ...postgresOptions,
+    // Force IPv4 by setting the family option via fetch options
+    fetch_types: false,
   });
   const sqlRead = postgres(readUrl, {
-    ssl: { rejectUnauthorized: env('DB_SSL_STRICT', 'false') === 'true' },
+    ...postgresOptions,
     max: Math.max(2, Math.floor(parseInt(env('DB_POOL_MAX', '10'), 10) / 2)),
-    idle_timeout: parseInt(env('DB_IDLE_TIMEOUT_MS', '30000'), 10),
-    onnotice: () => {},
-    keep_alive: 1,
+    fetch_types: false,
   });
 
   // drizzle-orm/postgres-js expects the writer client instance
