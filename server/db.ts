@@ -9,10 +9,12 @@ import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 // env helpers
 const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
 
-// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
-// IMPORTANT: On Render we rely on DB_PATH (e.g. /data/database.sqlite) for SQLite deployments.
+const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
 const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
-const sqlitePath = env('DB_PATH', '') || (runningOnRender ? '/data/database.sqlite' : '');
+
+// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
+// IMPORTANT: For Render free tier we do NOT have a persistent disk; choose Postgres (DATABASE_URL).
+const sqlitePath = env('DB_PATH', '');
 const sqliteFallbackUrl = sqlitePath
   ? (sqlitePath.startsWith('file:') ? sqlitePath : `file:${sqlitePath}`)
   : 'file:./dev.sqlite';
@@ -26,6 +28,21 @@ const looksLikeDefaultDevSqlite = (u: string) => {
 
 const databaseUrl = env('DATABASE_URL', '');
 const explicitWriteUrl = env('DATABASE_URL_WRITE', '');
+
+// Option A (recommended): Postgres on Render.
+// If we're on Render + production, require a non-SQLite DATABASE_URL (or DATABASE_URL_WRITE).
+if (isProduction && runningOnRender) {
+  const effective = explicitWriteUrl || databaseUrl;
+  const looksSqlite = (effective || '').startsWith('file:') || (effective || '').toLowerCase().includes('sqlite');
+  if (!effective || looksSqlite || looksLikeDefaultDevSqlite(effective)) {
+    // Fail fast with actionable guidance.
+    // eslint-disable-next-line no-console
+    console.error('Fatal: Render production requires Postgres. Set DATABASE_URL to a Postgres connection string (Supabase/Neon).');
+    // eslint-disable-next-line no-console
+    console.error('Do not use SQLite (file:./dev.sqlite) on Render free tier (no persistent disk).');
+    process.exit(1);
+  }
+}
 
 // If DB_PATH is configured and DATABASE_URL is empty or still pointing at the local default,
 // prefer DB_PATH so Render SQLite deployments don't accidentally use ./dev.sqlite.
@@ -483,9 +500,12 @@ if (isSqlite) {
       await sqlWrite`CREATE TABLE IF NOT EXISTS chapters (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        title_i18n TEXT,
         slug TEXT NOT NULL UNIQUE,
         content TEXT NOT NULL,
+        content_i18n TEXT,
         excerpt TEXT NOT NULL,
+        excerpt_i18n TEXT,
         chapter_number INTEGER NOT NULL,
         arc_number INTEGER,
         arc_title TEXT,
@@ -496,7 +516,9 @@ if (isSqlite) {
       await sqlWrite`CREATE TABLE IF NOT EXISTS characters (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        name_i18n TEXT,
         title TEXT,
+        title_i18n TEXT,
         description TEXT,
         story TEXT,
         slug TEXT NOT NULL UNIQUE,
@@ -507,6 +529,8 @@ if (isSqlite) {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         description TEXT NOT NULL,
+        name_i18n TEXT,
+        description_i18n TEXT,
         details TEXT,
         image_url TEXT,
         slug TEXT,
@@ -519,6 +543,8 @@ if (isSqlite) {
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
         description TEXT NOT NULL,
+        title_i18n TEXT,
+        description_i18n TEXT,
         content TEXT,
         category TEXT NOT NULL,
         image_url TEXT
@@ -526,9 +552,12 @@ if (isSqlite) {
       await sqlWrite`CREATE TABLE IF NOT EXISTS blog_posts (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
+        title_i18n TEXT,
         slug TEXT NOT NULL UNIQUE,
         content TEXT NOT NULL,
+        content_i18n TEXT,
         excerpt TEXT NOT NULL,
+        excerpt_i18n TEXT,
         category TEXT NOT NULL,
         published_at TEXT NOT NULL,
         image_url TEXT
@@ -547,6 +576,7 @@ if (isSqlite) {
         file_url TEXT NOT NULL,
         loop INTEGER NOT NULL DEFAULT 1,
         volume_default INTEGER NOT NULL DEFAULT 70,
+        volume_user_max INTEGER NOT NULL DEFAULT 70,
         fade_in_ms INTEGER,
         fade_out_ms INTEGER,
         created_at TEXT,
@@ -584,6 +614,31 @@ if (isSqlite) {
         value TEXT,
         updated_at TEXT
       )`;
+
+      // Best-effort: add missing columns to existing tables (idempotent)
+      const addCol = async (table: string, col: string, ddl: string) => {
+        try { await sqlWrite.unsafe(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${col} ${ddl}`); } catch {}
+      };
+      await addCol('chapters', 'title_i18n', 'TEXT');
+      await addCol('chapters', 'content_i18n', 'TEXT');
+      await addCol('chapters', 'excerpt_i18n', 'TEXT');
+
+      await addCol('characters', 'name_i18n', 'TEXT');
+      await addCol('characters', 'title_i18n', 'TEXT');
+
+      await addCol('locations', 'name_i18n', 'TEXT');
+      await addCol('locations', 'description_i18n', 'TEXT');
+
+      await addCol('codex_entries', 'title_i18n', 'TEXT');
+      await addCol('codex_entries', 'description_i18n', 'TEXT');
+      await addCol('codex_entries', 'content', 'TEXT');
+
+      await addCol('blog_posts', 'title_i18n', 'TEXT');
+      await addCol('blog_posts', 'content_i18n', 'TEXT');
+      await addCol('blog_posts', 'excerpt_i18n', 'TEXT');
+
+      await addCol('audio_tracks', 'volume_user_max', 'INTEGER NOT NULL DEFAULT 70');
+      await addCol('users', 'password_hash', 'TEXT');
     } catch (e) {
       console.warn('Failed to ensure Postgres schema (will continue):', e);
     }

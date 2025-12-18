@@ -113,6 +113,15 @@ export function getSession() {
   // If DATABASE_URL is provided and it's NOT SQLite, prefer a Postgres-backed session store in non-dev envs.
   const dbUrl = process.env.DATABASE_URL || '';
   const dbLooksSqlite = dbUrl.startsWith('file:') || dbUrl.toLowerCase().includes('sqlite');
+
+  // Render free tier has no persistent disk for SQLite. Require Postgres sessions in production.
+  const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
+  if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
+    if (!dbUrl || dbLooksSqlite) {
+      throw new Error('Render production requires Postgres DATABASE_URL (SQLite session store is not supported without a disk).');
+    }
+  }
+
   if (dbUrl && !dbLooksSqlite) {
     try {
       const pgStore = connectPg(session);

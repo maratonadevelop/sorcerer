@@ -1,14 +1,22 @@
 ﻿node_modules
 .env
 .env.local
+.env.migrate
+.env.migrate.local
 dev.sqlite
 *.sqlite
 dist/
-dist/public/
 stable-version.bundle
 cookies.session
 tmp_commit_backup/
 .vscode/
 .DS_Store
+server.log
+*.log
+tmp_*.json
+
+# Keep uploads tracked but ignore large files
+uploads/*.mp4.bak
+uploads/*.orig.*
 
 

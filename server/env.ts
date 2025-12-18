@@ -33,6 +33,25 @@ try {
         }
       }
     }
+
+    // Optional: local migration env (gitignored). Load LAST and override so you can
+    // force Postgres DATABASE_URL for dev without touching .env.local.
+    try {
+      const migrateCandidates = [
+        path.resolve(cwd, '.env.migrate.local'),
+        path.resolve(cwd, '.env.migrate'),
+      ];
+      for (const p of migrateCandidates) {
+        if (fs.existsSync(p)) {
+          const parsed = dotenv.parse(fs.readFileSync(p));
+          for (const [k, v] of Object.entries(parsed)) {
+            process.env[k] = v;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
   }
 } catch (e) {
   // Best effort; keep server running with process.env
