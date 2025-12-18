@@ -31,6 +31,7 @@ const pt: Translations = {
   discoverVastWorld: 'Descubra um mundo vasto e repleto de locais lendários.',
 
   theCodex: 'O Códex',
+  codex: 'Códex',
   comprehensiveGuide: 'Um guia completo para o sistema de magia, criaturas e locais.',
 
   // Time labels
@@ -87,6 +88,9 @@ const pt: Translations = {
   blogDesc: 'Insights dos bastidores e atualizações do autor',
   searchBlog: 'Pesquisar no blog...',
   all: 'Todos',
+  protagonist: 'Protagonista',
+  antagonist: 'Antagonista',
+  supporting: 'Coadjuvante',
   behindScenes: 'Bastidores',
   noBlogPostsFound: 'Nenhuma postagem encontrada.',
   noBlogPosts: 'Ainda não há postagens no blog.',
@@ -150,6 +154,7 @@ const en: Translations = {
   discoverVastWorld: 'Discover a vast world filled with legendary locations.',
 
   theCodex: 'The Codex',
+  codex: 'Codex',
   comprehensiveGuide: 'A comprehensive guide to magic systems, creatures, and locations.',
 
   // Time labels
@@ -206,6 +211,9 @@ const en: Translations = {
   blogDesc: 'Behind-the-scenes and author updates',
   searchBlog: 'Search the blog...',
   all: 'All',
+  protagonist: 'Protagonist',
+  antagonist: 'Antagonist',
+  supporting: 'Supporting',
   behindScenes: 'Behind Scenes',
   noBlogPostsFound: 'No posts found.',
   noBlogPosts: 'There are no blog posts yet.',
@@ -262,6 +270,7 @@ const es: Translations = {
   discoverVastWorld: 'Descubre un vasto mundo lleno de lugares legendarios.',
 
   theCodex: 'El Códex',
+  codex: 'Códex',
   comprehensiveGuide: 'Una guía completa de sistemas de magia, criaturas y lugares.',
 
   // Time labels
@@ -318,6 +327,9 @@ const es: Translations = {
   blogDesc: 'Perspectivas entre bastidores y atualizações del autor',
   searchBlog: 'Buscar en el blog...',
   all: 'Todos',
+  protagonist: 'Protagonista',
+  antagonist: 'Antagonista',
+  supporting: 'Secundario',
   behindScenes: 'Detrás de cámaras',
   noBlogPostsFound: 'No se encontraron publicaciones.',
   noBlogPosts: 'Aún no hay publicaciones en el blog.',

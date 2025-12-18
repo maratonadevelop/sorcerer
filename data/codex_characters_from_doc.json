@@ -1,0 +1,165 @@
+[
+  {
+    "id": "lady-elena-sylvaris",
+    "name": "Lady Elena Sylvaris",
+    "aliases": [],
+    "age": 45,
+    "position": "Senhora da Casa Sylvaris",
+    "manaRing": "2.2 (Anel da Forja Interna - Fortificação Física)",
+    "appearance": {
+      "height": "1.77m",
+      "build": "alta e atlética",
+      "skin": "clara bronzeada",
+      "hair": "longo, grosso e branco",
+      "eyes": "violeta profundo",
+      "clothes": "armadura nobre reforçada com encantamentos, insígnias Sylvaris"
+    },
+    "personality": ["destemida","autoritária","estrategista","protetora","valoriza força e disciplina"],
+    "roles": ["Estrategista Militar","Guardiã das Tradições","Âncora Emocional"],
+    "goals": ["Unir seus filhos para reclamar o domínio militar da Casa Sylvaris","Investigar a morte de Kaelus","Fortalecer alianças com élficos e anões"],
+    "notes": "Mãos calejadas; presença imponente. Treina herdeiros em combate."
+  },
+  {
+    "id": "melina-duskbane",
+    "name": "Melina Duskbane",
+    "aliases": ["Chama Ruiva"],
+    "age": null,
+    "position": "Aventureira/Guerreira",
+    "manaRing": null,
+    "appearance": {
+      "hair": "ruivos como brasas, trança prática",
+      "skin": "clara com cicatrizes",
+      "eyes": "verdes",
+      "clothes": "traje de couro envelhecido com placas de metal"
+    },
+    "personality": ["corajosa","teimosa","leal","autossuficiente"],
+    "history": "Cresceu nas ruas de Veldros; ex-mercenária, ganhou Duskbane após derrotar um culto.",
+    "relationships": {"kellen": "parceiro de longa data (romântico não-dito)", "lyra": "protetora"},
+    "notes": "Luvas gastas e botas manchadas de lama e cinzas."
+  },
+  {
+    "id": "kaelus-rhys-sylvaris",
+    "name": "Kaelus Rhys Sylvaris",
+    "aliases": [],
+    "ageAtDeath": 18,
+    "dead": true,
+    "position": "Caçula da Casa Sylvaris",
+    "manaRing": "2.3 (Forja Interior)",
+    "abilities": ["sensibilidade mágica rara","ler vestígios de mana","afinidade com artefatos"],
+    "appearance": {"hair": "branco/acinzentado","eyes": "verdes claros","height": "1.73m","build": "esguio"},
+    "personality": ["curioso","intuitivo","bondoso"],
+    "circumstances": "Emboscado antes de completar treinamento; corpo nunca encontrado (agora habitado por Aslam).",
+    "notes": "Considerado talento único; 'joia preciosa' da família."
+  },
+  {
+    "id": "kellen-aurelio",
+    "name": "Kellen Aurelio",
+    "aliases": [],
+    "position": "Guerreiro / Líder de grupo",
+    "appearance": {"build": "alto e musculoso","hair": "negro"},
+    "personality": ["determinado","protetor","líder"],
+    "history": "Veterano de batalhas; líder contra o guardião; futuro aprendiz de Aslam.",
+    "relationships": {"melina": "parceira","lyra": "laço protetor"},
+    "abilities": ["especialista em esgrima","táticas de combate"],
+    "weaknesses": ["imprudência por determinação excessiva"]
+  },
+  {
+    "id": "marcus-sylvaris",
+    "name": "Marcus Sylvaris",
+    "age": 30,
+    "position": "Co-herdeiro, Comandante Militar",
+    "manaRing": "3.1 (Anel da Expansão - Manipulação Externa)",
+    "appearance": {"height": "1.88m","skin": "ébano","hair": "prateado-branco trançado","eyes": "azul profundo"},
+    "personality": ["direto","orientado para ação","leal"],
+    "roles": ["Lidera forças militares da Casa Sylvaris"],
+    "goals": ["Investigar a emboscada a Kaelus","Fortalecer alianças élficas"],
+    "notes": "Conflito com Cordelia sobre liderança; treina com guerreiros élficos."
+  },
+  {
+    "id": "elara",
+    "name": "Elara",
+    "position": "Atendente da Guilda / Registro",
+    "appearance": {"hair":"castanho médio","eyes":"rubi"},
+    "personality":["amigável","curiosa","entusiasmada"],
+    "roles":["Introduz Aslam aos sistemas da Guilda"],
+    "abilities":["conhecimento da estrutura da Guilda","domínio da história da Era Mágica"],
+    "notes":"Possível ingenuidade com novos aventureiros."
+  },
+  {
+    "id": "lord-aldrich-sylvaris",
+    "name": "Lorde Aldrich Sylvaris",
+    "age": 46,
+    "position": "Cabeça da Casa Sylvaris",
+    "manaRing": "3.1 (Anel da Expansão)",
+    "appearance": {"height":"1.85m","skin":"ébano","hair":"raspado","eyes":"azul profundo"},
+    "personality":["estratégico","pragmático","severo"],
+    "roles":["Líder militar e político"],
+    "goals":["Descobrir a verdade sobre a morte de Kaelus","Preparar herdeiros"],
+    "notes":"Mantém diário oculto sobre a sensibilidade mágica de Kaelus."
+  },
+  {
+    "id": "evelyn-sylvaris",
+    "name": "Evelyn Sylvaris",
+    "age": 23,
+    "position": "Encantadora da Corte",
+    "manaRing": "2.3 (Domínio Interno)",
+    "appearance": {"height":"1.68m","skin":"dourado","hair":"prateado-branco com mechas azuis","eyes":"azul-safira"},
+    "personality":["fogosa","apaixonada","rápida no raciocínio"],
+    "roles":["Representa a Casa em eventos da corte","Cria itens mágicos"],
+    "goals":["Dominar magia ofensiva","Expor assassinos de Kaelus"],
+    "notes":"Esconde um artefato amaldiçoado ligado à morte de Kaelus."
+  },
+  {
+    "id": "lyra-stormweaver",
+    "name": "Lyra Stormweaver",
+    "position": "Conjuradora / Aliada do grupo",
+    "appearance": {"hair":"negro","clothes":"túnica azul com runas"},
+    "personality":["determinada","focada"],
+    "abilities":["magia de conjuração","feitiços antigos e runas"],
+    "weaknesses":["esgota mana rapidamente"],
+    "relationships":{"kellen":"aliada","melina":"aliada"},
+    "notes":"Futura aprendiz de Aslam."
+  },
+  {
+    "id": "klara-moonweaver",
+    "name": "Klara Moonweaver",
+    "aliases": ["Klara Monweaver"],
+    "position": "Aprendiz de Aslam",
+    "appearance": {"hair":"vermelho ondulado","eyes":"quase negros"},
+    "personality":["explosiva","independente"],
+    "backstory":"Perdeu família para monstros; criada nas ruas; deseja poder para proteger sua vila.",
+    "notes":"Aprendiz em jornada de autodescoberta."
+  },
+  {
+    "id": "nathalia-sylvaris",
+    "name": "Nathalia Sylvaris",
+    "age": 28,
+    "position": "Diplomata da Família",
+    "manaRing": "2.2 (Anel da Forja Interna - Infusão Básica)",
+    "appearance": {"height":"1.77m","skin":"oliva","hair":"prateado-branco bob"},
+    "personality":["encantadora","calculista"],
+    "roles":["Gerencia alianças e relações cortesãs"],
+    "abilities":["magia sutil de aprimoramento","detectar vestígios de mana"],
+    "notes":"Possui rede de espiões; esconde identidade de gênero."
+  },
+  {
+    "id": "aslam-radianthe",
+    "name": "Aslam Radianthe",
+    "aliases": ["Aslam Arianthe"],
+    "current_body": "Kaelus Rhys Sylvaris",
+    "age_current_body": 18,
+    "original_age_span": "29.000 AEM - 29.330 AEM",
+    "power_max": "Anel de Mana 5 (Anel do Domínio)",
+    "power_current": "2.3 (Anel da Forja Interior)",
+    "personality":["gentil","sábio","curioso"],
+    "notes":"Primeiro e mais poderoso usuário de magia da humanidade; despertou em corpo jovem e reconstrói poder." 
+  },
+  {
+    "id": "lysandra-vespera",
+    "name": "Lysandra Vespera",
+    "position": "Líder da Guilda de Magos de Eldrida",
+    "power_level": "Início do Anel 4 (Harmonia)",
+    "appearance": {"height":"1.75m","hair":"negro","eyes":"dourados"},
+    "notes":"Alta posição entre magos; grande prestígio e conhecimento sobre mana." 
+  }
+]

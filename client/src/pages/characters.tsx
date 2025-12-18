@@ -66,7 +66,7 @@ export default function Characters() {
                     className="capitalize"
                     data-testid={`button-filter-${role}`}
                   >
-                    {t[role as keyof typeof t] ?? role}
+                    {role === 'all' ? 'Todos' : role === 'protagonist' ? 'Protagonista' : role === 'antagonist' ? 'Antagonista' : 'Coadjuvante'}
                   </Button>
                 ))}
               </div>

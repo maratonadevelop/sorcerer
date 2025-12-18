@@ -26,6 +26,7 @@ __export(schema_exports, {
   insertLocationSchema: () => insertLocationSchema,
   insertReadingProgressSchema: () => insertReadingProgressSchema,
   locations: () => locations,
+  meta: () => meta,
   readingProgress: () => readingProgress,
   sessions: () => sessions,
   users: () => users
@@ -44,6 +45,9 @@ var chapters = sqliteTable("chapters", {
   excerpt: text("excerpt").notNull(),
   excerptI18n: text("excerpt_i18n"),
   chapterNumber: integer("chapter_number").notNull(),
+  // Arc metadata (optional)
+  arcNumber: integer("arc_number"),
+  arcTitle: text("arc_title"),
   readingTime: integer("reading_time").notNull(),
   // in minutes
   publishedAt: text("published_at").notNull(),
@@ -67,6 +71,14 @@ var locations = sqliteTable("locations", {
   name: text("name").notNull(),
   nameI18n: text("name_i18n"),
   description: text("description").notNull(),
+  // Short machine-friendly slug for URLs and filtering (optional but recommended)
+  slug: text("slug"),
+  // Long-form rich HTML/details for the location (nullable)
+  details: text("details"),
+  // Banner/cover image for the location
+  imageUrl: text("image_url"),
+  // Comma-separated tags for quick filtering (e.g. "continente,kingdom,ocean")
+  tags: text("tags"),
   descriptionI18n: text("description_i18n"),
   mapX: integer("map_x").notNull(),
   // x coordinate on map (percentage)
@@ -81,6 +93,9 @@ var codexEntries = sqliteTable("codex_entries", {
   titleI18n: text("title_i18n"),
   description: text("description").notNull(),
   descriptionI18n: text("description_i18n"),
+  // Full rich HTML content (detailed story). New column added 2025-09 to separate
+  // the brief card description from the detailed page content.
+  content: text("content"),
   category: text("category").notNull(),
   // magic, creatures, locations
   imageUrl: text("image_url")
@@ -145,6 +160,11 @@ var users = sqliteTable("users", {
   createdAt: text("created_at"),
   updatedAt: text("updated_at")
 });
+var meta = sqliteTable("meta", {
+  key: text("key").primaryKey(),
+  value: text("value"),
+  updatedAt: text("updated_at")
+});
 
 // server/db.ts
 import { randomUUID } from "crypto";
@@ -167,6 +187,8 @@ var ensureSqliteSchema = (dbInst) => {
       content TEXT NOT NULL,
       excerpt TEXT NOT NULL,
       chapter_number INTEGER NOT NULL,
+      arc_number INTEGER,
+      arc_title TEXT,
       reading_time INTEGER NOT NULL,
       published_at TEXT NOT NULL,
       image_url TEXT
@@ -185,6 +207,10 @@ var ensureSqliteSchema = (dbInst) => {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT NOT NULL,
+      details TEXT,
+      image_url TEXT,
+      slug TEXT,
+      tags TEXT,
       map_x INTEGER NOT NULL,
       map_y INTEGER NOT NULL,
       type TEXT NOT NULL
@@ -227,6 +253,11 @@ var ensureSqliteSchema = (dbInst) => {
       is_admin INTEGER DEFAULT 0,
       created_at TEXT,
       updated_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT
     );`
   ];
   dbInst.transaction((statements) => {
@@ -263,18 +294,169 @@ try {
       console.warn("Could not add 'slug' column to characters table:", e);
     }
   }
+  const chapterCols = sqliteDb.prepare("PRAGMA table_info('chapters');").all();
+  const hasArcNumber = chapterCols.some((c) => c.name === "arc_number");
+  if (!hasArcNumber) {
+    try {
+      console.log("Adding missing 'arc_number' column to chapters table");
+      sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN arc_number INTEGER;").run();
+    } catch (e) {
+      console.warn("Could not add 'arc_number' column to chapters table:", e);
+    }
+  }
+  const hasArcTitle = chapterCols.some((c) => c.name === "arc_title");
+  if (!hasArcTitle) {
+    try {
+      console.log("Adding missing 'arc_title' column to chapters table");
+      sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN arc_title TEXT;").run();
+    } catch (e) {
+      console.warn("Could not add 'arc_title' column to chapters table:", e);
+    }
+  }
+  try {
+    const locCols = sqliteDb.prepare("PRAGMA table_info('locations');").all();
+    const hasImage = locCols.some((c) => c.name === "image_url");
+    if (!hasImage) {
+      console.log("Adding missing 'image_url' column to locations table");
+      try {
+        sqliteDb.prepare("ALTER TABLE locations ADD COLUMN image_url TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'image_url' column to locations table:", e);
+      }
+    }
+    const hasDetails = locCols.some((c) => c.name === "details");
+    if (!hasDetails) {
+      console.log("Adding missing 'details' column to locations table");
+      try {
+        sqliteDb.prepare("ALTER TABLE locations ADD COLUMN details TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'details' column to locations table:", e);
+      }
+    }
+    const hasSlug2 = locCols.some((c) => c.name === "slug");
+    if (!hasSlug2) {
+      console.log("Adding missing 'slug' column to locations table");
+      try {
+        sqliteDb.prepare("ALTER TABLE locations ADD COLUMN slug TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'slug' column to locations table:", e);
+      }
+    }
+    const hasTags = locCols.some((c) => c.name === "tags");
+    if (!hasTags) {
+      console.log("Adding missing 'tags' column to locations table");
+      try {
+        sqliteDb.prepare("ALTER TABLE locations ADD COLUMN tags TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'tags' column to locations table:", e);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not verify/alter locations table schema:", e);
+  }
 } catch (e) {
   console.warn("Could not verify/alter characters table schema:", e);
 }
 var db = drizzle(sqliteDb, { schema: schema_exports });
+var pool = sqliteDb;
 
 // server/storage.ts
 import { eq, and } from "drizzle-orm";
+import fs2 from "fs";
+import path2 from "path";
+import { randomUUID as randomUUID2 } from "crypto";
+
+// server/importers/fullnovel.ts
 import fs from "fs";
 import path from "path";
-import { randomUUID as randomUUID2 } from "crypto";
+function mdToHtml(md) {
+  const lines = md.replace(/\r\n?/g, "\n").split("\n");
+  const out = [];
+  let para = [];
+  const flush = () => {
+    if (para.length) {
+      out.push(`<p>${inline(para.join(" ").trim())}</p>`);
+      para = [];
+    }
+  };
+  const inline = (s) => s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(.+?)\*/g, "<em>$1</em>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  for (const line of lines) {
+    const l = line.trimEnd();
+    if (/^#{1,6}\s+/.test(l)) {
+      flush();
+      const level = l.match(/^#+/)?.[0].length || 1;
+      const text2 = l.replace(/^#{1,6}\s+/, "");
+      out.push(`<h${level}>${inline(text2)}</h${level}>`);
+      continue;
+    }
+    if (l === "") {
+      flush();
+      continue;
+    }
+    para.push(l);
+  }
+  flush();
+  return out.join("\n");
+}
+function parseFullNovelMarkdown(filePath) {
+  const candidates = [
+    filePath ? path.resolve(filePath) : "",
+    path.resolve(process.cwd(), "sorcerer", "attached_assets", "FullNOVEL.md"),
+    path.resolve(process.cwd(), "attached_assets", "FullNOVEL.md")
+  ].filter(Boolean);
+  const fp = candidates.find((p) => fs.existsSync(p));
+  if (!fp) return [];
+  const raw = fs.readFileSync(fp, "utf8");
+  const content = raw.replace(/\r\n?/g, "\n");
+  const headingRe = /^##\s*Cap[íi]tulo\s+(\d+)\s*[:\-]\s*(.*)$/gmi;
+  const matches = [];
+  for (const m of content.matchAll(headingRe)) {
+    const idx = m.index;
+    if (typeof idx !== "number") continue;
+    const full = m[0] || "";
+    const num = parseInt(m[1], 10);
+    const titleRest = (m[2] || "").trim();
+    matches.push({ index: idx, length: full.length, num, title: titleRest });
+  }
+  const chapters2 = [];
+  for (let i = 0; i < matches.length; i++) {
+    const h = matches[i];
+    const startBody = h.index + h.length;
+    const endBody = i + 1 < matches.length ? matches[i + 1].index : content.length;
+    const body = content.slice(startBody, endBody).trim();
+    const num = h.num;
+    const restTitle = h.title;
+    const displayTitle = `Cap\xEDtulo ${num} \u2014 ${restTitle || (num === 1 ? "Pr\xF3logo" : "")}`.trim();
+    const slug = `arco-1-o-limiar-capitulo-${num}`;
+    const plain = body.replace(/\*\*|\*/g, "").replace(/\n+/g, " ").trim();
+    const sentences = plain.split(/(?<=[.!?])\s+/).filter(Boolean);
+    let excerpt = sentences.slice(0, 3).join(" ");
+    if (excerpt.length > 300) excerpt = excerpt.slice(0, 300).trim() + "\u2026";
+    const contentHtml = mdToHtml(body);
+    chapters2.push({
+      title: displayTitle,
+      slug,
+      excerpt,
+      contentHtml,
+      chapterNumber: num,
+      arcNumber: 1,
+      arcTitle: "O Limiar"
+    });
+  }
+  return chapters2;
+}
+
+// server/storage.ts
 var DatabaseStorage = class {
   constructor() {
+    try {
+      const poolPath = global.__dirname || process.cwd();
+      try {
+        pool.prepare("ALTER TABLE codex_entries ADD COLUMN content TEXT;").run();
+      } catch (e) {
+      }
+    } catch (e) {
+    }
     this.seedData();
   }
   // Helper: create a filesystem-safe, url-friendly slug
@@ -364,8 +546,10 @@ var DatabaseStorage = class {
     return f;
   }
   async deleteChapter(id) {
-    const result = await db.delete(chapters).where(eq(chapters.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const [existing] = await db.select().from(chapters).where(eq(chapters.id, id));
+    if (!existing) return false;
+    await db.delete(chapters).where(eq(chapters.id, id));
+    return true;
   }
   // Character methods
   async getCharacters() {
@@ -374,8 +558,8 @@ var DatabaseStorage = class {
     } catch (error) {
       console.error("DB error in getCharacters:", error);
       try {
-        const offlineFile = path.resolve(process.cwd(), "data", "offline-characters.json");
-        const data = await fs.promises.readFile(offlineFile, "utf-8");
+        const offlineFile = path2.resolve(process.cwd(), "data", "offline-characters.json");
+        const data = await fs2.promises.readFile(offlineFile, "utf-8");
         const arr = JSON.parse(data || "[]");
         return arr;
       } catch (fileErr) {
@@ -390,8 +574,8 @@ var DatabaseStorage = class {
     } catch (error) {
       console.error("DB error in getCharacterById:", error);
       try {
-        const offlineFile = path.resolve(process.cwd(), "data", "offline-characters.json");
-        const data = await fs.promises.readFile(offlineFile, "utf-8");
+        const offlineFile = path2.resolve(process.cwd(), "data", "offline-characters.json");
+        const data = await fs2.promises.readFile(offlineFile, "utf-8");
         const arr = JSON.parse(data || "[]");
         return arr.find((c) => c.id === id);
       } catch (fileErr) {
@@ -440,8 +624,10 @@ var DatabaseStorage = class {
     return f;
   }
   async deleteCharacter(id) {
-    const result = await db.delete(characters).where(eq(characters.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const [existing] = await db.select().from(characters).where(eq(characters.id, id));
+    if (!existing) return false;
+    await db.delete(characters).where(eq(characters.id, id));
+    return true;
   }
   // Location methods
   async getLocations() {
@@ -450,8 +636,8 @@ var DatabaseStorage = class {
     } catch (error) {
       console.error("DB error in getLocations:", error);
       try {
-        const offlineFile = path.resolve(process.cwd(), "data", "offline-locations.json");
-        const data = await fs.promises.readFile(offlineFile, "utf-8");
+        const offlineFile = path2.resolve(process.cwd(), "data", "offline-locations.json");
+        const data = await fs2.promises.readFile(offlineFile, "utf-8");
         const arr = JSON.parse(data || "[]");
         return arr;
       } catch (fileErr) {
@@ -483,17 +669,29 @@ var DatabaseStorage = class {
   }
   async updateLocation(id, location) {
     try {
+      console.log("storage.updateLocation id=", id, "payload=", JSON.stringify(location));
       const [updatedLocation] = await db.update(locations).set(location).where(eq(locations.id, id)).returning();
-      if (updatedLocation) return updatedLocation;
+      if (updatedLocation) {
+        console.log("storage.updateLocation returning updated row for id=", id);
+        return updatedLocation;
+      }
     } catch (e) {
       console.warn("Update returning not supported or failed for locations, falling back to SELECT:", e);
     }
-    const [f] = await db.select().from(locations).where(eq(locations.id, id));
-    return f;
+    try {
+      const [f] = await db.select().from(locations).where(eq(locations.id, id));
+      console.log("storage.updateLocation SELECT fallback result for id=", id, f ? JSON.stringify(f) : "(not found)");
+      return f;
+    } catch (e) {
+      console.error("storage.updateLocation SELECT fallback failed for id=", id, e);
+      return void 0;
+    }
   }
   async deleteLocation(id) {
-    const result = await db.delete(locations).where(eq(locations.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const [existing] = await db.select().from(locations).where(eq(locations.id, id));
+    if (!existing) return false;
+    await db.delete(locations).where(eq(locations.id, id));
+    return true;
   }
   // Codex methods
   async getCodexEntries() {
@@ -502,8 +700,8 @@ var DatabaseStorage = class {
     } catch (error) {
       console.error("DB error in getCodexEntries:", error);
       try {
-        const offlineFile = path.resolve(process.cwd(), "data", "offline-codex.json");
-        const data = await fs.promises.readFile(offlineFile, "utf-8");
+        const offlineFile = path2.resolve(process.cwd(), "data", "offline-codex.json");
+        const data = await fs2.promises.readFile(offlineFile, "utf-8");
         const arr = JSON.parse(data || "[]");
         return arr;
       } catch (fileErr) {
@@ -552,8 +750,10 @@ var DatabaseStorage = class {
     return f;
   }
   async deleteCodexEntry(id) {
-    const result = await db.delete(codexEntries).where(eq(codexEntries.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const [existing] = await db.select().from(codexEntries).where(eq(codexEntries.id, id));
+    if (!existing) return false;
+    await db.delete(codexEntries).where(eq(codexEntries.id, id));
+    return true;
   }
   // Blog methods
   async getBlogPosts() {
@@ -614,8 +814,10 @@ var DatabaseStorage = class {
     return f;
   }
   async deleteBlogPost(id) {
-    const result = await db.delete(blogPosts).where(eq(blogPosts.id, id));
-    return (result.rowCount ?? 0) > 0;
+    const [existing] = await db.select().from(blogPosts).where(eq(blogPosts.id, id));
+    if (!existing) return false;
+    await db.delete(blogPosts).where(eq(blogPosts.id, id));
+    return true;
   }
   // Reading progress methods
   async getReadingProgress(sessionId, chapterId) {
@@ -645,14 +847,47 @@ var DatabaseStorage = class {
   }
   async seedData() {
     try {
-      const existingChapters = await this.getChapters();
-      if (existingChapters.length > 0) {
-        return;
+      const getMeta = (key) => {
+        try {
+          const row = pool.prepare("SELECT value FROM meta WHERE key = ? LIMIT 1").get(key);
+          return row?.value;
+        } catch {
+          return void 0;
+        }
+      };
+      const setMeta = (key, value) => {
+        try {
+          const iso = (/* @__PURE__ */ new Date()).toISOString();
+          pool.prepare("INSERT INTO meta(key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at").run(key, value, iso);
+        } catch {
+          try {
+            const isoFallback = (/* @__PURE__ */ new Date()).toISOString();
+            pool.prepare("INSERT OR REPLACE INTO meta(key, value, updated_at) VALUES (?, ?, ?)").run(key, value, isoFallback);
+          } catch {
+          }
+        }
+      };
+      try {
+        const existingCodex = await this.getCodexEntries();
+        if (!existingCodex || existingCodex.length === 0) {
+          const manaHtml = `<h2>Sistema de An\xE9is de Mana</h2><h3>Sistema de Conex\xE3o de An\xE9is de Mana</h3><p>O Sistema de Conex\xE3o de An\xE9is de Mana \xE9 uma estrutura de desenvolvimento arcano que organiza o dom\xEDnio de mana em sete n\xEDveis ascendentes. Cada "anel" representa um est\xE1gio de habilidade e controle, do contato inicial com mana \xE0 transcend\xEAncia c\xF3smica. Este sistema guia praticantes em uma jornada de evolu\xE7\xE3o m\xE1gica, de manipula\xE7\xF5es b\xE1sicas \xE0 cria\xE7\xE3o de novas realidades.</p><p><strong>Para Cada Subn\xEDvel</strong>: C\xF3digo de Identifica\xE7\xE3o: [X.Y] (X = Anel, Y = Subn\xEDvel)</p><p><strong>Indicadores de Dom\xEDnio</strong>: [Sinais de Progresso]</p><p><strong>Falhas Comuns</strong>: [Indicadores de problemas no uso e magia daquele anel]</p><hr/><h3>Conex\xE3o de Anel de Mana 1: Anel do Despertar</h3><p><em>Descri\xE7\xE3o</em>: Primeiro contato e manipula\xE7\xE3o inicial de mana.</p><p><em>Riscos</em>: Exaust\xE3o mental, confus\xE3o sensorial.</p><p><em>Marca</em>: Aura vis\xEDvel fraca.</p><h4>[1.1] Percep\xE7\xE3o de Mana</h4><ul><li><strong>Habilidade</strong>: Sentir a presen\xE7a de mana.</li><li><strong>Desafios</strong>: Ajustar-se a uma nova sensa\xE7\xE3o, Mana.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Identifica\xE7\xE3o consistente de fontes de mana.</li><li><strong>Falhas Comuns</strong>: Sobrecarga sensorial, dorm\xEAncia.</li></ul><h4>[1.2] Controle Inicial</h4><ul><li><strong>Habilidade</strong>: Manipula\xE7\xE3o b\xE1sica de mana interna.</li><li><strong>Desafios</strong>: Resili\xEAncia mental e f\xEDsica.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Canalizar mana sem desgaste excessivo.</li><li><strong>Falhas Comuns</strong>: Fluxo de energia ineficiente, fadiga excessiva.</li></ul><h4>[1.3] Primeiras Manipula\xE7\xF5es</h4><ul><li><strong>Habilidade</strong>: Gerar manifesta\xE7\xF5es simples.</li><li><strong>Desafios</strong>: Manter controle constante.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Criar pulsos de aura est\xE1veis.</li><li><strong>Falhas Comuns</strong>: Desconex\xE3o s\xFAbita, dissipa\xE7\xE3o r\xE1pida.</li></ul><hr/><h3>Conex\xE3o de Anel de Mana 2: Anel da Forja Interna</h3><p><em>Descri\xE7\xE3o</em>: Dom\xEDnio corporal e infus\xE3o de mana em objetos.</p><p><em>Riscos</em>: Desequil\xEDbrio f\xEDsico, sobrecarga de objetos.</p><p><em>Marca</em>: Fortalecimento f\xEDsico vis\xEDvel.</p><h4>[2.1] Fortifica\xE7\xE3o F\xEDsica</h4><ul><li><strong>Habilidade</strong>: Aprimoramento f\xEDsico com mana.</li><li><strong>Desafios</strong>: Equilibrar aprimoramento pelo corpo.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Fortifica\xE7\xE3o corporal uniforme.</li><li><strong>Falhas Comuns</strong>: Desequil\xEDbrio entre membros.</li></ul><h4>[2.2] Infus\xE3o B\xE1sica</h4><ul><li><strong>Habilidade</strong>: Carregar objetos com mana.</li><li><strong>Desafios</strong>: Manter infus\xE3o est\xE1vel.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Infus\xE3o de longa dura\xE7\xE3o.</li><li><strong>Falhas Comuns</strong>: Deteriora\xE7\xE3o de objetos, radia\xE7\xE3o m\xE1gica.</li></ul><h4>[2.3] Dom\xEDnio Interno de Mana</h4><ul><li><strong>Habilidade</strong>: Controle completo de mana interna pessoal.</li><li><strong>Desafios</strong>: Manter amplifica\xE7\xF5es est\xE1veis.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Encantamentos cont\xEDnuos.</li><li><strong>Falhas Comuns</strong>: Instabilidade sob estresse.</li></ul><hr/><h3>Conex\xE3o de Anel de Mana 3: Anel da Expans\xE3o</h3><p><em>Descri\xE7\xE3o</em>: Manipula\xE7\xE3o de mana al\xE9m do corpo.</p><p><em>Riscos</em>: Desequil\xEDbrio ambiental, esgotamento de mana.</p><p><em>Marca</em>: Aura mais densa.</p><h4>[3.1] Manipula\xE7\xE3o Externa</h4><ul><li><strong>Habilidade</strong>: Afetar o ambiente com mana; concentrar quantidade significativa de energia fora do corpo.</li><li><strong>Desafios</strong>: Controle sobre grandes quantidades de energia.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Manipula\xE7\xE3o precisa de mana.</li><li><strong>Falhas Comuns</strong>: Perda de controle, resist\xEAncia mental.</li></ul><h4>[3.2] Sentinela Elemental</h4><ul><li><strong>Habilidade</strong>: Controle b\xE1sico de elementos externos e internos.</li><li><strong>Desafios</strong>: Efeitos colaterais de elementos, como superaquecimento com fogo.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Harmonia entre mana interna e externa.</li><li><strong>Falhas Comuns</strong>: Esgotamento excessivo de mana.</li></ul><h4>[3.3] Consolida\xE7\xE3o Elemental</h4><ul><li><strong>Habilidade</strong>: Controle efetivo de elementos.</li><li><strong>Desafios</strong>: Equil\xEDbrio ambiental.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Intera\xE7\xE3o harmoniosa com elementos.</li><li><strong>Falhas Comuns</strong>: Drenagem ambiental excessiva.</li></ul><hr/><h3>Conex\xE3o de Anel de Mana 4: Anel da Harmonia</h3><p><em>Descri\xE7\xE3o</em>: Dom\xEDnio elemental avan\xE7ado e harmonia suprema com mana interna e externa.</p><p><em>Riscos</em>: Instabilidade ambiental, altera\xE7\xF5es clim\xE1ticas.</p><p><em>Marca</em>: Manifesta\xE7\xF5es elementais poderosas.</p><h4>[4.1] Coordena\xE7\xE3o Elemental</h4><ul><li><strong>Habilidade</strong>: Manipular m\xFAltiplos elementos simultaneamente.</li><li><strong>Desafios</strong>: Manter equil\xEDbrio natural.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Controle multi-elemental.</li><li><strong>Falhas Comuns</strong>: Mudan\xE7as clim\xE1ticas n\xE3o intencionais.</li></ul><h4>[4.2] Controle Destrutivo</h4><ul><li><strong>Habilidade</strong>: Magia em larga escala.</li><li><strong>Desafios</strong>: Estabilidade do ecossistema.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Destrui\xE7\xE3o controlada.</li><li><strong>Falhas Comuns</strong>: Desequil\xEDbrio regional de mana.</li></ul><h4>[4.3] Manipula\xE7\xE3o Avan\xE7ada</h4><ul><li><strong>Habilidade</strong>: Transforma\xE7\xE3o ambiental.</li><li><strong>Desafios</strong>: Controle absoluto.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Cria\xE7\xE3o de ecossistemas.</li><li><strong>Falhas Comuns</strong>: Altera\xE7\xF5es clim\xE1ticas permanentes.</li></ul><hr/><h3>Conex\xE3o de Anel de Mana 5: Anel do Dom\xEDnio</h3><p><em>Descri\xE7\xE3o</em>: Dom\xEDnio absoluto de mana.</p><p><em>Riscos</em>: Desconex\xE3o da realidade, paradoxos.</p><p><em>Marca</em>: Altera\xE7\xE3o da realidade.</p><h4>[5.1] Cria\xE7\xE3o de Realidade</h4><ul><li><strong>Habilidade</strong>: Gerar realidades alternativas.</li><li><strong>Desafios</strong>: Manter conex\xE3o com a realidade.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Cria\xE7\xF5es est\xE1veis.</li><li><strong>Falhas Comuns</strong>: Distor\xE7\xE3o temporal-espacial.</li></ul><h4>[5.2] Manipula\xE7\xE3o da Ess\xEAncia</h4><ul><li><strong>Habilidade</strong>: Alterar os pr\xF3prios conceitos de mana.</li><li><strong>Desafios</strong>: Estabilidade universal.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Transforma\xE7\xE3o controlada.</li><li><strong>Falhas Comuns</strong>: Ruptura do anel.</li></ul><h4>[5.3] Dom\xEDnio Completo</h4><ul><li><strong>Habilidade</strong>: Controle universal.</li><li><strong>Desafios</strong>: Reter humanidade.</li><li><strong>Indicadores de Dom\xEDnio</strong>: Harmonia com o universo.</li><li><strong>Falhas Comuns</strong>: Tirania m\xE1gica, isolamento.</li></ul><hr/><h3>Conex\xE3o de Anel de Mana 6: Anel da Cria\xE7\xE3o</h3><p><em>"Os Criadores de Mana, Forjadores de Novas Realidades"</em> \u2014 Neste n\xEDvel, o praticante n\xE3o apenas manipula mana, mas a cria com suas pr\xF3prias regras e conceitos. Podem gerar feiti\xE7os e encantamentos nunca vistos antes, moldando o mundo com imenso poder criativo. Deuses antigos e seres primordiais residem aqui.</p><hr/><h3>Conex\xE3o de Anel de Mana 7: Anel da Transcend\xEAncia</h3><p><em>"Os Guardi\xF5es da Ess\xEAncia"</em> \u2014 Este anel \xE9 o \xE1pice da jornada na conex\xE3o com mana, um estado de absoluta transcend\xEAncia que nenhum mortal jamais alcan\xE7ou. Aqui, o praticante torna-se uma entidade de mana pura, capaz de moldar o universo e a pr\xF3pria realidade em escala c\xF3smica.</p>`;
+          await this.createCodexEntry({
+            title: "Sistema de Conex\xE3o de An\xE9is de Mana",
+            description: manaHtml,
+            category: "magic",
+            imageUrl: null
+          });
+          console.log("Seeded Codex: Sistema de Conex\xE3o de An\xE9is de Mana");
+        }
+      } catch (e) {
+        console.warn("Codex seed skipped due to error:", e);
       }
-      const chapter1 = {
-        title: "O Despertar dos Poderes Antigos",
-        slug: "despertar-poderes-antigos",
-        content: `As brumas do tempo se separaram como cortinas antigas, revelando um mundo que Eldric mal reconhecia. Onde antes a Grande Espiral de Luminar perfurava os c\xE9us, agora apenas ru\xEDnas permaneciam, tomadas por vinhas espinhosas que pulsavam com escurid\xE3o antinatural.
+      const existingChapters = await this.getChapters();
+      if (existingChapters.length === 0) {
+        const chapter1 = {
+          title: "O Despertar dos Poderes Antigos",
+          slug: "despertar-poderes-antigos",
+          content: `As brumas do tempo se separaram como cortinas antigas, revelando um mundo que Eldric mal reconhecia. Onde antes a Grande Espiral de Luminar perfurava os c\xE9us, agora apenas ru\xEDnas permaneciam, tomadas por vinhas espinhosas que pulsavam com escurid\xE3o antinatural.
 
 Ele deu um passo \xE0 frente, suas botas desgastadas esmagando fragmentos cristalinos que antes eram janelas para outros reinos. Tr\xEAs s\xE9culos. Era esse o tempo que ele havia ficado selado no Vazio Entre Mundos, e em sua aus\xEAncia, tudo o que ele havia lutado para proteger havia desmoronado.
 
@@ -661,67 +896,198 @@ Ele deu um passo \xE0 frente, suas botas desgastadas esmagando fragmentos crista
 O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para sempre. Em seu lugar estava um reino consumido pelas sombras, onde o pr\xF3prio tecido da magia havia sido corrompido. Ainda assim, dentro dessa corrup\xE7\xE3o, Eldric sentiu algo mais - uma presen\xE7a familiar, antiga e mal\xE9vola.
 
 "Malachar", ele suspirou, o nome tendo gosto de cinzas em sua l\xEDngua. Seu antigo aprendiz, aquele em quem havia confiado acima de todos os outros, aquele cuja trai\xE7\xE3o havia levado ao seu aprisionamento. O Rei das Sombras n\xE3o apenas havia sobrevivido aos s\xE9culos; ele havia prosperado.`,
-        excerpt: "Eldric descobre a c\xE2mara oculta sob a Grande Biblioteca, onde os primeiros feiti\xE7os j\xE1 escritos ainda pulsam com energia adormecida...",
-        chapterNumber: 15,
-        readingTime: 12,
-        publishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString(),
-        imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
-      };
-      const chapter2 = {
-        title: "Sombras no Horizonte",
-        slug: "sombras-no-horizonte",
-        content: "Os ex\xE9rcitos dos Reinos do Norte se re\xFAnem enquanto press\xE1gios sombrios aparecem pelo c\xE9u. A guerra parece inevit\xE1vel...",
-        excerpt: "Os ex\xE9rcitos dos Reinos do Norte se re\xFAnem enquanto press\xE1gios sombrios aparecem pelo c\xE9u. A guerra parece inevit\xE1vel...",
-        chapterNumber: 14,
-        readingTime: 15,
-        publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString(),
-        imageUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af2176?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
-      };
-      const chapter3 = {
-        title: "Os Bosques Sussurrantes",
-        slug: "bosques-sussurrantes",
-        content: "Lyanna se aventura na floresta proibida, guiada apenas por profecias antigas e suas crescentes habilidades m\xE1gicas...",
-        excerpt: "Lyanna se aventura na floresta proibida, guiada apenas por profecias antigas e suas crescentes habilidades m\xE1gicas...",
-        chapterNumber: 13,
-        readingTime: 18,
-        publishedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1e3).toISOString(),
-        imageUrl: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
-      };
-      await this.createChapter(chapter1);
-      await this.createChapter(chapter2);
-      await this.createChapter(chapter3);
-      const aslam = {
-        name: "Aslam Arianthe",
-        title: "O Primeiro Feiticeiro",
-        description: "Antigo e poderoso, Aslam retorna ap\xF3s s\xE9culos para encontrar seu mundo transformado pela guerra e escurid\xE3o. Gentil e compassivo, apesar de seu poder imenso, carrega uma solid\xE3o por ser 'diferente'.",
-        imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
-        role: "protagonist"
-      };
-      const lyra = {
-        name: "Lyra Stormweaver",
-        title: "Conjuradora de Tempestades",
-        description: "Uma jovem maga com cabelos negros e t\xFAnica azul adornada com runas antigas. Seus olhos brilhantes sugerem suas habilidades m\xE1gicas, determinada mas tensa.",
-        imageUrl: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
-        role: "protagonist"
-      };
-      const aldrich = {
-        name: "Lorde Aldrich Sylvaris",
-        title: "Cabe\xE7a da Casa Sylvaris",
-        description: "Senhor imponente de tom \xE9bano profundo e cabelo raspado com barba cheia. L\xEDder da poderosa Casa Sylvaris, com 46 anos e n\xEDvel de anel de mana 3.1.",
-        imageUrl: "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
-        role: "supporting"
-      };
-      const kellen = {
-        name: "Kellen Aurelio",
-        title: "Guerreiro Experiente",
-        description: "Alto e musculoso, com cabelos negros e olhos intensos. Veste uma armadura marcada por batalhas que contam hist\xF3rias de combates passados.",
-        imageUrl: "https://images.unsplash.com/photo-1566492031773-4f4e44671d66?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
-        role: "supporting"
-      };
-      await this.createCharacter(aslam);
-      await this.createCharacter(lyra);
-      await this.createCharacter(aldrich);
-      await this.createCharacter(kellen);
+          excerpt: "Eldric desperta em um mundo arruinado pela escurid\xE3o e sente o rastro de um inimigo antigo...",
+          chapterNumber: 15,
+          arcNumber: 2,
+          arcTitle: "Ascens\xE3o das Sombras",
+          readingTime: 12,
+          publishedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1e3).toISOString(),
+          imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
+        };
+        const chapter2 = {
+          title: "Sombras no Horizonte",
+          slug: "sombras-no-horizonte",
+          content: "Os ex\xE9rcitos dos Reinos do Norte se re\xFAnem enquanto press\xE1gios sombrios aparecem pelo c\xE9u. A guerra parece inevit\xE1vel...",
+          excerpt: "Os ex\xE9rcitos se movem enquanto press\xE1gios no c\xE9u anunciam um conflito inevit\xE1vel...",
+          chapterNumber: 14,
+          arcNumber: 2,
+          arcTitle: "Ascens\xE3o das Sombras",
+          readingTime: 15,
+          publishedAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1e3).toISOString(),
+          imageUrl: "https://images.unsplash.com/photo-1518709268805-4e9042af2176?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
+        };
+        const chapter3 = {
+          title: "Os Bosques Sussurrantes",
+          slug: "bosques-sussurrantes",
+          content: "Lyanna se aventura na floresta proibida, guiada apenas por profecias antigas e suas crescentes habilidades m\xE1gicas...",
+          excerpt: "Lyanna entra na floresta proibida guiada por profecias e novos poderes...",
+          chapterNumber: 13,
+          arcNumber: 1,
+          arcTitle: "O Despertar",
+          readingTime: 18,
+          publishedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1e3).toISOString(),
+          imageUrl: "https://images.unsplash.com/photo-1441974231531-c6227db76b6e?ixlib=rb-4.0.3&auto=format&fit=crop&w=400&h=250"
+        };
+        await this.createChapter(chapter1);
+        await this.createChapter(chapter2);
+        await this.createChapter(chapter3);
+      }
+      const forceImport = process.env.IMPORT_FULLNOVEL_ON_STARTUP === "true";
+      let alreadyImported = false;
+      try {
+        const stmt = pool.prepare("SELECT value FROM meta WHERE key = ? LIMIT 1");
+        const row = stmt.get("fullnovel_imported");
+        alreadyImported = !!(row && row.value === "true");
+      } catch (e) {
+        alreadyImported = false;
+      }
+      if (forceImport || !alreadyImported) {
+        try {
+          let uploadImages = [];
+          try {
+            const uploadsDir = path2.resolve(process.cwd(), "uploads");
+            const entries = await fs2.promises.readdir(uploadsDir, { withFileTypes: true });
+            const allowed = /* @__PURE__ */ new Set([".jpg", ".jpeg", ".png", ".webp"]);
+            uploadImages = entries.filter((e) => e.isFile()).map((e) => e.name).filter((name) => allowed.has(path2.extname(name).toLowerCase())).map((name) => `/uploads/${name}`);
+          } catch {
+          }
+          const parsed = parseFullNovelMarkdown();
+          if (parsed.length > 0) {
+            const existence = await Promise.all(parsed.map(async (ch) => !!await this.getChapterBySlug(ch.slug)));
+            const allExist = existence.every(Boolean);
+            if (allExist && !forceImport) {
+              console.log("Arc 1 chapters already present; skipping FullNOVEL import");
+            } else {
+              let imgIndex = 0;
+              for (const ch of parsed) {
+                const exists = await this.getChapterBySlug(ch.slug);
+                const readingTime = Math.max(1, Math.ceil(ch.contentHtml.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length / 250));
+                const chosenImage = uploadImages.length > 0 ? uploadImages[imgIndex++ % uploadImages.length] : "/FinalMap.png";
+                const payload = {
+                  title: ch.title,
+                  slug: ch.slug,
+                  excerpt: ch.excerpt,
+                  content: ch.contentHtml,
+                  chapterNumber: ch.chapterNumber,
+                  arcNumber: ch.arcNumber,
+                  arcTitle: ch.arcTitle,
+                  readingTime,
+                  publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+                  imageUrl: chosenImage
+                };
+                if (!exists) {
+                  const created = await this.createChapter(payload);
+                  console.log("Imported Arc1 chapter from FullNOVEL.md:", created.slug);
+                } else if (forceImport) {
+                  await this.updateChapter(exists.id, {
+                    title: payload.title,
+                    excerpt: payload.excerpt,
+                    content: payload.content,
+                    readingTime: payload.readingTime,
+                    // Update image during force import to spread unique images too
+                    imageUrl: payload.imageUrl
+                  });
+                  console.log("Arc 1 chapter exists, updated from FullNOVEL.md:", ch.slug);
+                }
+              }
+            }
+          } else {
+            console.log("FullNOVEL.md not found or empty, skipping import");
+          }
+          if (!forceImport) {
+            try {
+              const iso = (/* @__PURE__ */ new Date()).toISOString();
+              pool.prepare("INSERT INTO meta(key, value, updated_at) VALUES ('fullnovel_imported', 'true', ?) ON CONFLICT(key) DO UPDATE SET value='true', updated_at=excluded.updated_at").run(iso);
+            } catch (e) {
+              try {
+                const iso = (/* @__PURE__ */ new Date()).toISOString();
+                pool.prepare("INSERT OR REPLACE INTO meta(key, value, updated_at) VALUES ('fullnovel_imported', 'true', ?)").run(iso);
+              } catch {
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Arc 1 chapters seed skipped due to error:", e);
+        }
+      }
+      const forceSeedCharacters = process.env.FORCE_SEED_CHARACTERS === "true";
+      const charactersSeeded = getMeta("seed_characters_done") === "true";
+      const seeds = [
+        {
+          baseSlug: this.slugify("Aslam Arianthe"),
+          data: {
+            name: "Aslam Arianthe",
+            title: "O Primeiro Feiticeiro",
+            description: "Antigo e poderoso, Aslam retorna ap\xF3s s\xE9culos para encontrar seu mundo transformado pela guerra e escurid\xE3o. Gentil e compassivo, apesar de seu poder imenso, carrega uma solid\xE3o por ser 'diferente'.",
+            imageUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
+            role: "protagonist",
+            slug: this.slugify("Aslam Arianthe")
+          }
+        },
+        {
+          baseSlug: this.slugify("Lyra Stormweaver"),
+          data: {
+            name: "Lyra Stormweaver",
+            title: "Conjuradora de Tempestades",
+            description: "Uma jovem maga com cabelos negros e t\xFAnica azul adornada com runas antigas. Seus olhos brilhantes sugerem suas habilidades m\xE1gicas, determinada mas tensa.",
+            imageUrl: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
+            role: "protagonist",
+            slug: this.slugify("Lyra Stormweaver")
+          }
+        },
+        {
+          baseSlug: this.slugify("Lorde Aldrich Sylvaris"),
+          data: {
+            name: "Lorde Aldrich Sylvaris",
+            title: "Cabe\xE7a da Casa Sylvaris",
+            description: "Senhor imponente de tom \xE9bano profundo e cabelo raspado com barba cheia. L\xEDder da poderosa Casa Sylvaris, com 46 anos e n\xEDvel de anel de mana 3.1.",
+            imageUrl: "https://images.unsplash.com/photo-1501594907352-04cda38ebc29?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
+            role: "supporting",
+            slug: this.slugify("Lorde Aldrich Sylvaris")
+          }
+        },
+        {
+          baseSlug: this.slugify("Kellen Aurelio"),
+          data: {
+            name: "Kellen Aurelio",
+            title: "Guerreiro Experiente",
+            description: "Alto e musculoso, com cabelos negros e olhos intensos. Veste uma armadura marcada por batalhas que contam hist\xF3rias de combates passados.",
+            imageUrl: "https://images.unsplash.com/photo-1566492031773-4f4e44671d66?ixlib=rb-4.0.3&auto=format&fit=crop&w=300&h=400",
+            role: "supporting",
+            slug: this.slugify("Kellen Aurelio")
+          }
+        }
+      ];
+      if (forceSeedCharacters || !charactersSeeded) {
+        for (const s of seeds) {
+          try {
+            const exists = await this.getCharacterBySlug(s.baseSlug);
+            if (!exists) {
+              await this.createCharacter(s.data);
+            }
+          } catch (e) {
+            console.warn("Seed character insert skipped:", s.baseSlug, e);
+          }
+        }
+        try {
+          const current = await this.getCharacters();
+          for (const s of seeds) {
+            const group = current.filter((c) => c.slug === s.baseSlug || c.slug.startsWith(`${s.baseSlug}-`));
+            if (group.length > 1) {
+              const keep = group.find((c) => c.slug === s.baseSlug) || group[0];
+              for (const g of group) {
+                if (g.id !== keep.id) {
+                  await this.deleteCharacter(g.id);
+                }
+              }
+              console.log(`Deduplicated characters for slug '${s.baseSlug}': kept ${keep.slug}, removed ${group.length - 1}`);
+            }
+          }
+        } catch (e) {
+          console.warn("Character dedup pass skipped:", e);
+        }
+        if (!forceSeedCharacters) setMeta("seed_characters_done", "true");
+      }
       const valaria = {
         name: "Reino de Valaria",
         description: "Capital pr\xF3spera onde residem nobres e artes\xE3os. Centro pol\xEDtico e cultural com arquitetura majestosa.",
@@ -743,9 +1109,22 @@ O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para 
         mapY: 67,
         type: "shadowlands"
       };
-      await this.createLocation(valaria);
-      await this.createLocation(aethermoor);
-      await this.createLocation(monteNuvens);
+      try {
+        const existingLocations = await this.getLocations();
+        const hasValaria = existingLocations.some((l) => l.name === valaria.name);
+        const hasAether = existingLocations.some((l) => l.name === aethermoor.name);
+        const hasMonte = existingLocations.some((l) => l.name === monteNuvens.name);
+        if (!hasValaria) await this.createLocation(valaria);
+        if (!hasAether) await this.createLocation(aethermoor);
+        if (!hasMonte) await this.createLocation(monteNuvens);
+      } catch (e) {
+        try {
+          await this.createLocation(valaria);
+          await this.createLocation(aethermoor);
+          await this.createLocation(monteNuvens);
+        } catch {
+        }
+      }
       const blogPost1 = {
         title: "Criando os Sistemas M\xE1gicos de Aethermoor",
         slug: "criando-sistemas-magicos",
@@ -755,7 +1134,14 @@ O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para 
         publishedAt: new Date(Date.now() - 5 * 24 * 60 * 60 * 1e3).toISOString(),
         imageUrl: "https://images.unsplash.com/photo-1544716278-ca5e3f4abd8c?ixlib=rb-4.0.3&auto=format&fit=crop&w=600&h=300"
       };
-      await this.createBlogPost(blogPost1);
+      try {
+        const existingBlog = await this.getBlogPostBySlug(blogPost1.slug);
+        if (!existingBlog) {
+          await this.createBlogPost(blogPost1);
+        }
+      } catch (e) {
+        console.warn("Blog seed skipped or already exists:", e);
+      }
       console.log("Database seeded successfully");
     } catch (error) {
       console.error("Error seeding database:", error);
@@ -763,23 +1149,23 @@ O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para 
   }
 };
 var FileStorage = class {
-  baseDir = path.resolve(process.cwd(), "data");
+  baseDir = path2.resolve(process.cwd(), "data");
   constructor() {
-    fs.mkdirSync(this.baseDir, { recursive: true });
+    fs2.mkdirSync(this.baseDir, { recursive: true });
   }
   // helper
   async readFile(name, defaultValue) {
-    const fp = path.join(this.baseDir, name);
+    const fp = path2.join(this.baseDir, name);
     try {
-      const txt = await fs.promises.readFile(fp, "utf-8");
+      const txt = await fs2.promises.readFile(fp, "utf-8");
       return JSON.parse(txt || "null");
     } catch (e) {
       return defaultValue;
     }
   }
   async writeFile(name, data) {
-    const fp = path.join(this.baseDir, name);
-    await fs.promises.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
+    const fp = path2.join(this.baseDir, name);
+    await fs2.promises.writeFile(fp, JSON.stringify(data, null, 2), "utf-8");
   }
   async getUser(id) {
     const users2 = await this.readFile("offline-users.json", []);
@@ -990,7 +1376,7 @@ var storage = storageInstance;
 import session from "express-session";
 import connectPg from "connect-pg-simple";
 import connectSqlite3 from "connect-sqlite3";
-import path2 from "path";
+import path3 from "path";
 var isDevAdmin = (req, res, next) => {
   if (process.env.NODE_ENV === "development") {
     req.adminUser = { id: "dev-admin", isAdmin: true };
@@ -1043,7 +1429,7 @@ function getSession() {
   return session({
     store: new SQLiteStore({
       db: "dev.sqlite",
-      dir: path2.resolve(process.cwd()),
+      dir: path3.resolve(process.cwd()),
       table: "sessions"
     }),
     secret: process.env.SESSION_SECRET || "dev-secret",
@@ -1084,8 +1470,8 @@ var isAdmin = async (req, res, next) => {
 };
 
 // server/routes.ts
-import fs2 from "fs";
-import path3 from "path";
+import fs3 from "fs";
+import path4 from "path";
 import { randomUUID as randomUUID3 } from "crypto";
 import { ZodError } from "zod";
 async function saveTranslations(_resource, _id, _translations) {
@@ -1137,6 +1523,28 @@ async function registerRoutes(app2) {
   app2.get("/api/characters", async (req, res) => {
     try {
       const characters2 = await storage.getCharacters();
+      if (req.query.uploadsFallback === "true" && (!characters2 || characters2.length === 0)) {
+        try {
+          const uploadsFile = path4.resolve(process.cwd(), "uploads", "codex_return_of_the_first_sorcerer.json");
+          if (fs3.existsSync(uploadsFile)) {
+            const raw = await fs3.promises.readFile(uploadsFile, "utf-8");
+            const parsed = JSON.parse(raw || "{}");
+            if (Array.isArray(parsed.characters) && parsed.characters.length > 0) {
+              const mapped = parsed.characters.map((c) => ({
+                id: c.id || randomUUID3(),
+                name: c.name || c.id || "Character",
+                title: c.position || c.title || void 0,
+                description: c.notes || c.description || void 0,
+                imageUrl: c.imageUrl || null,
+                role: c.role || "unknown"
+              }));
+              return res.json(mapped);
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to read uploaded characters JSON (explicit fallback):", e);
+        }
+      }
       res.json(characters2);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch characters" });
@@ -1189,8 +1597,20 @@ async function registerRoutes(app2) {
   app2.get("/api/codex", async (req, res) => {
     try {
       const { category } = req.query;
-      const entries = category ? await storage.getCodexEntriesByCategory(category) : await storage.getCodexEntries();
-      res.json(entries);
+      const requestedCategory = category ? String(category) : void 0;
+      const allowed = /* @__PURE__ */ new Set(["magic", "creatures", "items", "other"]);
+      const raw = await storage.getCodexEntries();
+      const normalized = (raw || []).map((e) => {
+        const cat = String(e.category || "").toLowerCase();
+        let mapped;
+        if (cat === "characters") mapped = "creatures";
+        else if (cat === "locations") mapped = "other";
+        else if (allowed.has(cat)) mapped = cat;
+        else mapped = "other";
+        return { ...e, category: mapped };
+      }).filter((e) => allowed.has(e.category));
+      const filtered = requestedCategory ? normalized.filter((e) => e.category === requestedCategory) : normalized;
+      res.json(filtered);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch codex entries" });
     }
@@ -1266,13 +1686,44 @@ async function registerRoutes(app2) {
         console.warn("Chapter payload missing title, defaulting to:", fallbackTitle);
         data.title = fallbackTitle;
       }
-      if (!data.excerpt) {
-        if (typeof data.content === "string" && data.content.length > 0) {
-          data.excerpt = String(data.content).slice(0, 200);
-          console.warn("Chapter payload missing excerpt, deriving from content (200 chars)");
-        } else {
-          data.excerpt = "";
+      const slugify = (input) => {
+        const s = (input || "").toString().trim().toLowerCase();
+        const normalized = s.normalize ? s.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : s;
+        return normalized.replace(/[^a-z0-9]+/g, "-").replace(/^[\-]+|[\-]+$/g, "");
+      };
+      const ensureUniqueChapterSlug = async (desired) => {
+        let base = slugify(desired) || "capitulo";
+        let attempt = base;
+        let i = 1;
+        while (true) {
+          const exists = await storage.getChapterBySlug(attempt);
+          if (!exists) return attempt;
+          i += 1;
+          attempt = `${base}-${i}`;
+          if (i > 50) return `${base}-${Date.now()}`;
         }
+      };
+      const html = String(data.content || "");
+      const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+      if (!data.excerpt) {
+        data.excerpt = plain.slice(0, 300);
+      }
+      if (!data.readingTime) {
+        const words = plain.split(/\s+/).filter(Boolean).length;
+        data.readingTime = Math.max(1, Math.ceil(words / 250));
+      }
+      if (!data.publishedAt) {
+        data.publishedAt = (/* @__PURE__ */ new Date()).toISOString();
+      }
+      if (!data.slug || String(data.slug).trim() === "") {
+        const desired = data.title || `capitulo-${data.chapterNumber || ""}`;
+        data.slug = await ensureUniqueChapterSlug(desired);
+      }
+      if (!data.imageUrl) {
+        data.imageUrl = "/FinalMap.png";
+      }
+      if (!data.chapterNumber || data.chapterNumber <= 0) {
+        data.chapterNumber = 1;
       }
       const validatedData = insertChapterSchema.parse(data);
       const chapter = await storage.createChapter(validatedData);
@@ -1293,11 +1744,19 @@ async function registerRoutes(app2) {
     try {
       const { data, translations } = req.body;
       if (!data) return res.status(400).json({ message: 'Request body must have "data" property' });
-      const validatedData = insertChapterSchema.partial().parse(data);
-      if (validatedData?.publishedAt) {
-        validatedData.publishedAt = new Date(String(validatedData.publishedAt)).toISOString();
+      const patch = insertChapterSchema.partial().parse(data);
+      if (patch?.publishedAt) {
+        patch.publishedAt = new Date(String(patch.publishedAt)).toISOString();
       }
-      const chapter = await storage.updateChapter(req.params.id, validatedData);
+      if (typeof patch.content === "string" && patch.readingTime == null) {
+        const plain = patch.content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+        const words = plain.split(/\s+/).filter(Boolean).length;
+        patch.readingTime = Math.max(1, Math.ceil(words / 250));
+        if (!patch.excerpt) {
+          patch.excerpt = plain.slice(0, 300);
+        }
+      }
+      const chapter = await storage.updateChapter(req.params.id, patch);
       if (!chapter) {
         res.status(404).json({ message: "Chapter not found" });
         return;
@@ -1413,6 +1872,11 @@ async function registerRoutes(app2) {
   app2.put("/api/admin/locations/:id", isDevAdmin, async (req, res) => {
     try {
       const { data, translations } = req.body;
+      try {
+        console.log("ADMIN UPDATE LOCATION called for id=", req.params.id, "sessionUser=", req.session?.user, "adminUser=", req.adminUser, "bodyKeys=", Object.keys(req.body || {}));
+        if (process.env.NODE_ENV === "development") console.log("ADMIN UPDATE LOCATION body=", JSON.stringify(req.body));
+      } catch (e) {
+      }
       if (!data) return res.status(400).json({ message: 'Request body must have "data" property' });
       const validatedData = insertLocationSchema.partial().parse(data);
       const location = await storage.updateLocation(req.params.id, validatedData);
@@ -1451,11 +1915,30 @@ async function registerRoutes(app2) {
       const { data, translations } = req.body;
       if (!data) return res.status(400).json({ message: 'Request body must have "data" property' });
       const validatedData = insertCodexEntrySchema.parse(data);
-      const entry = await storage.createCodexEntry(validatedData);
-      if (entry?.id && translations) {
-        await saveTranslations("codex", entry.id, translations);
+      try {
+        const entry = await storage.createCodexEntry(validatedData);
+        if (entry?.id && translations) {
+          await saveTranslations("codex", entry.id, translations);
+        }
+        return res.status(201).json(entry);
+      } catch (err) {
+        console.warn("Codex create failed, attempting fallback (content -> description):", String(err));
+        try {
+          const fallback = { ...validatedData };
+          const html = String(fallback.content || "");
+          const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+          fallback.description = fallback.description && String(fallback.description).trim().length > 0 ? fallback.description : plain.slice(0, 300);
+          delete fallback.content;
+          const entry2 = await storage.createCodexEntry(fallback);
+          if (entry2?.id && translations) {
+            await saveTranslations("codex", entry2.id, translations);
+          }
+          return res.status(201).json(entry2);
+        } catch (err2) {
+          console.error("Fallback codex create also failed:", String(err2));
+          throw err2;
+        }
       }
-      res.status(201).json(entry);
     } catch (error) {
       if (error instanceof ZodError) {
         console.error("Codex validation error:", error.errors);
@@ -1470,15 +1953,38 @@ async function registerRoutes(app2) {
       const { data, translations } = req.body;
       if (!data) return res.status(400).json({ message: 'Request body must have "data" property' });
       const validatedData = insertCodexEntrySchema.partial().parse(data);
-      const entry = await storage.updateCodexEntry(req.params.id, validatedData);
-      if (!entry) {
-        res.status(404).json({ message: "Codex entry not found" });
-        return;
+      try {
+        const entry = await storage.updateCodexEntry(req.params.id, validatedData);
+        if (!entry) {
+          res.status(404).json({ message: "Codex entry not found" });
+          return;
+        }
+        if (entry?.id && translations) {
+          await saveTranslations("codex", entry.id, translations);
+        }
+        return res.json(entry);
+      } catch (err) {
+        console.warn("Codex update failed, attempting fallback (content -> description):", String(err));
+        try {
+          const fallback = { ...validatedData };
+          const html = String(fallback.content || "");
+          const plain = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+          fallback.description = fallback.description && String(fallback.description).trim().length > 0 ? fallback.description : plain.slice(0, 300);
+          delete fallback.content;
+          const entry2 = await storage.updateCodexEntry(req.params.id, fallback);
+          if (!entry2) {
+            res.status(404).json({ message: "Codex entry not found" });
+            return;
+          }
+          if (entry2?.id && translations) {
+            await saveTranslations("codex", entry2.id, translations);
+          }
+          return res.json(entry2);
+        } catch (err2) {
+          console.error("Fallback codex update also failed:", String(err2));
+          throw err2;
+        }
       }
-      if (entry?.id && translations) {
-        await saveTranslations("codex", entry.id, translations);
-      }
-      res.json(entry);
     } catch (error) {
       if (error instanceof ZodError) {
         console.error("Codex validation error:", error.errors);
@@ -1527,17 +2033,87 @@ async function registerRoutes(app2) {
         return;
       }
       const base64 = data.includes("base64,") ? data.split("base64,")[1] : data;
-      const ext = path3.extname(filename) || "";
+      const ext = path4.extname(filename) || "";
       const name = `${randomUUID3()}${ext}`;
-      const uploadsDir = path3.resolve(process.cwd(), "uploads");
-      await fs2.promises.mkdir(uploadsDir, { recursive: true });
-      const filePath = path3.join(uploadsDir, name);
-      await fs2.promises.writeFile(filePath, Buffer.from(base64, "base64"));
+      const uploadsDir = path4.resolve(process.cwd(), "uploads");
+      await fs3.promises.mkdir(uploadsDir, { recursive: true });
+      const filePath = path4.join(uploadsDir, name);
+      await fs3.promises.writeFile(filePath, Buffer.from(base64, "base64"));
       const url = `/uploads/${name}`;
       res.json({ url });
     } catch (error) {
       console.error("Upload error:", error);
       res.status(500).json({ message: "Failed to upload file" });
+    }
+  });
+  app2.post("/api/maps", async (req, res) => {
+    try {
+      const { svg, markers, masks, name } = req.body || {};
+      if (!markers || !Array.isArray(markers)) return res.status(400).json({ message: "markers array required" });
+      const id = randomUUID3();
+      const uploadsDir = path4.resolve(process.cwd(), "uploads", "maps");
+      await fs3.promises.mkdir(uploadsDir, { recursive: true });
+      const out = {
+        id,
+        name: name || `map-${id}`,
+        svg: svg || null,
+        markers,
+        masks: masks || [],
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      };
+      const filePath = path4.join(uploadsDir, `${id}.json`);
+      await fs3.promises.writeFile(filePath, JSON.stringify(out, null, 2), "utf8");
+      return res.json({ id, url: `/uploads/maps/${id}.json` });
+    } catch (err) {
+      console.error("Save map error:", err);
+      return res.status(500).json({ message: "Failed to save map" });
+    }
+  });
+  app2.get("/api/maps/:id", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const filePath = path4.resolve(process.cwd(), "uploads", "maps", `${id}.json`);
+      if (!fs3.existsSync(filePath)) return res.status(404).json({ message: "Map not found" });
+      const content = await fs3.promises.readFile(filePath, "utf8");
+      return res.type("application/json").send(content);
+    } catch (err) {
+      console.error("Get map error:", err);
+      return res.status(500).json({ message: "Failed to read map" });
+    }
+  });
+  app2.get("/api/maps/latest", async (req, res) => {
+    try {
+      const uploadsDir = path4.resolve(process.cwd(), "uploads", "maps");
+      if (!fs3.existsSync(uploadsDir)) return res.status(404).json({ message: "No maps found" });
+      const files = await fs3.promises.readdir(uploadsDir);
+      const jsonFiles = files.filter((f) => f.endsWith(".json"));
+      if (jsonFiles.length === 0) return res.status(404).json({ message: "No maps found" });
+      let newest = null;
+      for (const fname of jsonFiles) {
+        const fp = path4.join(uploadsDir, fname);
+        try {
+          const txt = await fs3.promises.readFile(fp, "utf8");
+          const parsed = JSON.parse(txt || "{}");
+          const createdAt = parsed?.createdAt || null;
+          if (!newest) newest = { path: fp, createdAt };
+          else {
+            if (createdAt && newest.createdAt) {
+              if (new Date(createdAt) > new Date(newest.createdAt)) newest = { path: fp, createdAt };
+            } else {
+              const a = (await fs3.promises.stat(fp)).mtime;
+              const b = newest.path ? (await fs3.promises.stat(newest.path)).mtime : /* @__PURE__ */ new Date(0);
+              if (a > b) newest = { path: fp, createdAt };
+            }
+          }
+        } catch (e) {
+        }
+      }
+      if (!newest) return res.status(404).json({ message: "No maps found" });
+      const content = await fs3.promises.readFile(newest.path, "utf8");
+      return res.type("application/json").send(content);
+    } catch (err) {
+      console.error("Get latest map error:", err);
+      return res.status(500).json({ message: "Failed to read maps" });
     }
   });
   app2.put("/api/admin/blog/:id", isDevAdmin, async (req, res) => {
@@ -1576,6 +2152,154 @@ async function registerRoutes(app2) {
     }
   });
   if (process.env.NODE_ENV === "development") {
+    app2.post("/api/dev/seed-arc1", isDevAdmin, async (_req, res) => {
+      try {
+        const seeds = [
+          {
+            slug: "arco-1-o-limiar-capitulo-1",
+            title: "Cap\xEDtulo 1 \u2014 O Limiar",
+            excerpt: "\xC0 beira do desconhecido, uma porta antiga se abre \u2014 mas s\xF3 para quem ousa pagar o pre\xE7o.",
+            content: "<p>O vento cantava pelos corredores de pedra enquanto a luz p\xE1lida da aurora arranhava o ch\xE3o. Diante do Port\xE3o Velado, Kael sentiu o frio do mundo antigo tocar sua pele como um juramento esquecido.</p>\n<p>As runas no arco vibraram, t\xEDmidas a princ\xEDpio, depois firmes \u2014 reconhecendo nele algo que nem ele compreendia totalmente. O Limiar n\xE3o julgava coragem. Julgava verdade.</p>\n<p>\u2014 Se cruzar, n\xE3o volta o mesmo \u2014 avisou Lyra, mantendo os olhos na dobra de luz. \u2014 Muitos entram. Poucos retornam. Nenhum retorna inteiro.</p>\n<p>Kael inspirou. E deu o passo.</p>",
+            chapterNumber: 1,
+            arcNumber: 1,
+            arcTitle: "O Limiar",
+            readingTime: 7,
+            publishedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1e3).toISOString(),
+            imageUrl: "/FinalMap.png"
+          },
+          {
+            slug: "arco-1-o-limiar-capitulo-2",
+            title: "Cap\xEDtulo 2 \u2014 Ecos da Porta",
+            excerpt: "Cada porta cobra um ped\xE1gio. A primeira, mem\xF3ria. A segunda, nome.",
+            content: "<p>Do outro lado, o mundo n\xE3o obedecia mapas. O c\xE9u dobrava, a terra respirava, e as sombras tinham \xE2ngulos que n\xE3o pertenciam a lugar nenhum.</p>\n<p>Kael ouviu sua voz cham\xE1-lo \u2014 mas a voz vinha de tr\xE1s de si, de um tempo anterior, de quando ele ainda n\xE3o carregava o s\xEDmbolo ardendo no pulso.</p>\n<p>\u2014 O Limiar n\xE3o abre caminho. Ele abre voc\xEA \u2014 sussurrou a guardi\xE3. \u2014 S\xF3 ent\xE3o o caminho aparece.</p>\n<p>As palavras ecoaram como \xE1gua em pedra antiga. E algo dentro dele come\xE7ou a ceder.</p>",
+            chapterNumber: 2,
+            arcNumber: 1,
+            arcTitle: "O Limiar",
+            readingTime: 8,
+            publishedAt: new Date(Date.now() - 36 * 60 * 60 * 1e3).toISOString(),
+            imageUrl: "/FinalMap.png"
+          },
+          {
+            slug: "arco-1-o-limiar-capitulo-3",
+            title: "Cap\xEDtulo 3 \u2014 O Pre\xE7o da Travessia",
+            excerpt: "Toda travessia leva algo. S\xF3 os tolos acreditam que \xE9 poss\xEDvel atravessar ileso.",
+            content: "<p>Quando a luz fechou atr\xE1s deles, o sil\xEAncio pesou como ferro molhado. Kael tentou lembrar o nome do seu mestre \u2014 e falhou.</p>\n<p>N\xE3o era esquecimento comum. Era uma aus\xEAncia limpa, cir\xFArgica. Algo havia sido tomado.</p>\n<p>\u2014 A porta levou? \u2014 Lyra perguntou, a voz curta.</p>\n<p>\u2014 Levou \u2014 disse Kael, sentindo, junto ao vazio, um fio de poder novo, cru e afiado. \u2014 E deixou isso no lugar.</p>",
+            chapterNumber: 3,
+            arcNumber: 1,
+            arcTitle: "O Limiar",
+            readingTime: 9,
+            publishedAt: new Date(Date.now() - 12 * 60 * 60 * 1e3).toISOString(),
+            imageUrl: "/FinalMap.png"
+          }
+        ];
+        const created = [];
+        for (const s of seeds) {
+          const exists = await storage.getChapterBySlug(s.slug);
+          if (!exists) {
+            created.push(await storage.createChapter(s));
+          }
+        }
+        return res.json({ ok: true, created: created.map((c) => c.slug) });
+      } catch (e) {
+        console.error("seed-arc1 error:", e);
+        return res.status(500).json({ ok: false, error: String(e) });
+      }
+    });
+    app2.post("/api/dev/import-uploads", isDevAdmin, async (req, res) => {
+      try {
+        const uploadsFile = path4.resolve(process.cwd(), "uploads", "codex_return_of_the_first_sorcerer.json");
+        if (!fs3.existsSync(uploadsFile)) return res.status(404).json({ message: "uploads file not found" });
+        const raw = await fs3.promises.readFile(uploadsFile, "utf-8");
+        const parsed = JSON.parse(raw || "{}");
+        const created = { characters: [], locations: [], codex: [] };
+        if (Array.isArray(parsed.characters)) {
+          for (const c of parsed.characters) {
+            try {
+              const payload = {
+                name: c.name || c.id,
+                title: c.position || c.title || void 0,
+                description: c.notes || c.description || void 0,
+                imageUrl: c.imageUrl || void 0,
+                role: c.role || "unknown"
+              };
+              const record = await storage.createCharacter(payload);
+              created.characters.push(record);
+            } catch (e) {
+              console.warn("Failed to create character from upload:", e);
+            }
+          }
+        }
+        if (Array.isArray(parsed.locations)) {
+          for (const l of parsed.locations) {
+            try {
+              const payload = {
+                name: l.name || l.id,
+                description: l.description || void 0,
+                mapX: l.mapX || void 0,
+                mapY: l.mapY || void 0,
+                type: l.type || void 0
+              };
+              const record = await storage.createLocation(payload);
+              created.locations.push(record);
+            } catch (e) {
+              console.warn("Failed to create location from upload:", e);
+            }
+          }
+        }
+        res.json({ ok: true, created });
+      } catch (err) {
+        console.error("Import uploads failed:", err);
+        res.status(500).json({ message: "Import failed", error: String(err) });
+      }
+    });
+    app2.post("/api/dev/import-uploads-force", async (_req, res) => {
+      if (process.env.NODE_ENV !== "development") return res.status(403).json({ message: "Not allowed" });
+      try {
+        const uploadsFile = path4.resolve(process.cwd(), "uploads", "codex_return_of_the_first_sorcerer.json");
+        if (!fs3.existsSync(uploadsFile)) return res.status(404).json({ message: "uploads file not found" });
+        const raw = await fs3.promises.readFile(uploadsFile, "utf-8");
+        const parsed = JSON.parse(raw || "{}");
+        const created = { characters: [], locations: [], codex: [] };
+        if (Array.isArray(parsed.characters)) {
+          for (const c of parsed.characters) {
+            try {
+              const payload = {
+                name: c.name || c.id,
+                title: c.position || c.title || void 0,
+                description: c.notes || c.description || void 0,
+                imageUrl: c.imageUrl || void 0,
+                role: c.role || "unknown"
+              };
+              const record = await storage.createCharacter(payload);
+              created.characters.push(record);
+            } catch (e) {
+              console.warn("Failed to create character from upload:", e);
+            }
+          }
+        }
+        if (Array.isArray(parsed.locations)) {
+          for (const l of parsed.locations) {
+            try {
+              const payload = {
+                name: l.name || l.id,
+                description: l.description || void 0,
+                mapX: l.mapX || void 0,
+                mapY: l.mapY || void 0,
+                type: l.type || void 0
+              };
+              const record = await storage.createLocation(payload);
+              created.locations.push(record);
+            } catch (e) {
+              console.warn("Failed to create location from upload:", e);
+            }
+          }
+        }
+        res.json({ ok: true, created });
+      } catch (err) {
+        console.error("Import uploads failed (force):", err);
+        res.status(500).json({ message: "Import failed", error: String(err) });
+      }
+    });
     app2.post("/api/dev/login", (req, res) => {
       try {
         const { id, email, isAdmin: isAdmin3 = true } = req.body || {};
@@ -1585,6 +2309,85 @@ async function registerRoutes(app2) {
       } catch (error) {
         console.error("Dev login error:", error);
         return res.status(500).json({ message: "Failed to login (dev)" });
+      }
+    });
+    app2.post("/api/dev/import-fullnovel", isDevAdmin, async (req, res) => {
+      try {
+        const parsed = parseFullNovelMarkdown();
+        const created = [];
+        const updated = [];
+        for (const ch of parsed) {
+          const exists = await storage.getChapterBySlug(ch.slug);
+          const readingTime = Math.max(1, Math.ceil(ch.contentHtml.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length / 250));
+          const payload = {
+            title: ch.title,
+            slug: ch.slug,
+            excerpt: ch.excerpt,
+            content: ch.contentHtml,
+            chapterNumber: ch.chapterNumber,
+            arcNumber: ch.arcNumber,
+            arcTitle: ch.arcTitle,
+            readingTime,
+            publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            imageUrl: "/FinalMap.png"
+          };
+          if (!exists) {
+            await storage.createChapter(payload);
+            created.push(ch.slug);
+          } else {
+            await storage.updateChapter(exists.id, {
+              title: payload.title,
+              excerpt: payload.excerpt,
+              content: payload.content,
+              readingTime: payload.readingTime
+            });
+            updated.push(ch.slug);
+          }
+        }
+        return res.json({ ok: true, created, updated, count: parsed.length });
+      } catch (e) {
+        console.error("import-fullnovel error:", e);
+        return res.status(500).json({ ok: false, error: String(e) });
+      }
+    });
+    app2.post("/api/dev/import-fullnovel-force", async (_req, res) => {
+      if (process.env.NODE_ENV !== "development") return res.status(403).json({ message: "Not allowed" });
+      try {
+        const parsed = parseFullNovelMarkdown();
+        const created = [];
+        const updated = [];
+        for (const ch of parsed) {
+          const exists = await storage.getChapterBySlug(ch.slug);
+          const readingTime = Math.max(1, Math.ceil(ch.contentHtml.replace(/<[^>]*>/g, "").split(/\s+/).filter(Boolean).length / 250));
+          const payload = {
+            title: ch.title,
+            slug: ch.slug,
+            excerpt: ch.excerpt,
+            content: ch.contentHtml,
+            chapterNumber: ch.chapterNumber,
+            arcNumber: ch.arcNumber,
+            arcTitle: ch.arcTitle,
+            readingTime,
+            publishedAt: (/* @__PURE__ */ new Date()).toISOString(),
+            imageUrl: "/FinalMap.png"
+          };
+          if (!exists) {
+            await storage.createChapter(payload);
+            created.push(ch.slug);
+          } else {
+            await storage.updateChapter(exists.id, {
+              title: payload.title,
+              excerpt: payload.excerpt,
+              content: payload.content,
+              readingTime: payload.readingTime
+            });
+            updated.push(ch.slug);
+          }
+        }
+        return res.json({ ok: true, created, updated, count: parsed.length });
+      } catch (e) {
+        console.error("import-fullnovel-force error:", e);
+        return res.status(500).json({ ok: false, error: String(e) });
       }
     });
     app2.get("/api/dev/login", (req, res) => {
@@ -1651,32 +2454,33 @@ async function registerRoutes(app2) {
 
 // server/vite.ts
 import express from "express";
-import fs3 from "fs";
-import path5 from "path";
+import fs4 from "fs";
+import path6 from "path";
 import { createServer as createViteServer, createLogger } from "vite";
 
 // vite.config.ts
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import path4 from "path";
+import path5 from "path";
 var vite_config_default = defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path4.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path4.resolve(import.meta.dirname, "shared"),
-      "@assets": path4.resolve(import.meta.dirname, "attached_assets")
+      "@": path5.resolve(import.meta.dirname, "client", "src"),
+      "@shared": path5.resolve(import.meta.dirname, "shared"),
+      "@assets": path5.resolve(import.meta.dirname, "attached_assets")
     }
   },
-  root: path4.resolve(import.meta.dirname, "client"),
+  root: path5.resolve(import.meta.dirname, "client"),
   build: {
-    outDir: path4.resolve(import.meta.dirname, "dist/public"),
+    outDir: path5.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true
   },
   server: {
     proxy: {
       "/api": {
-        target: "http://localhost:5000",
+        // allow overriding backend port via BACKEND_PORT or PORT env when running dev
+        target: `http://localhost:${process.env.BACKEND_PORT || process.env.PORT || 5e3}`,
         changeOrigin: true,
         secure: false
       }
@@ -1713,7 +2517,11 @@ async function setupVite(app2, server) {
       ...viteLogger,
       error: (msg, options) => {
         viteLogger.error(msg, options);
-        process.exit(1);
+        try {
+          console.error("[vite] error:", typeof msg === "string" ? msg : JSON.stringify(msg));
+        } catch (e) {
+          console.error("[vite] error (unknown)");
+        }
       }
     },
     server: serverOptions,
@@ -1723,13 +2531,13 @@ async function setupVite(app2, server) {
   app2.use("*", async (req, res, next) => {
     const url = req.originalUrl;
     try {
-      const clientTemplate = path5.resolve(
+      const clientTemplate = path6.resolve(
         import.meta.dirname,
         "..",
         "client",
         "index.html"
       );
-      let template = await fs3.promises.readFile(clientTemplate, "utf-8");
+      let template = await fs4.promises.readFile(clientTemplate, "utf-8");
       template = template.replace(
         `src="/src/main.tsx"`,
         `src="/src/main.tsx?v=${nanoid()}"`
@@ -1743,21 +2551,21 @@ async function setupVite(app2, server) {
   });
 }
 function serveStatic(app2) {
-  const distPath = path5.resolve(import.meta.dirname, "public");
-  if (!fs3.existsSync(distPath)) {
+  const distPath = path6.resolve(import.meta.dirname, "public");
+  if (!fs4.existsSync(distPath)) {
     throw new Error(
       `Could not find the build directory: ${distPath}, make sure to build the client first`
     );
   }
   app2.use(express.static(distPath));
   app2.use("*", (_req, res) => {
-    res.sendFile(path5.resolve(distPath, "index.html"));
+    res.sendFile(path6.resolve(distPath, "index.html"));
   });
 }
 
 // server/index.ts
-import fs4 from "fs";
-import path6 from "path";
+import fs5 from "fs";
+import path7 from "path";
 var app = express2();
 app.use(
   cors({
@@ -1767,11 +2575,11 @@ app.use(
     // Allow cookies to be sent
   })
 );
-app.use(express2.json());
-app.use(express2.urlencoded({ extended: false }));
+app.use(express2.json({ limit: process.env.BODY_LIMIT || "25mb" }));
+app.use(express2.urlencoded({ extended: true, limit: process.env.BODY_LIMIT || "25mb" }));
 app.use((req, res, next) => {
   const start = Date.now();
-  const path7 = req.path;
+  const path8 = req.path;
   let capturedJsonResponse = void 0;
   const originalResJson = res.json;
   res.json = function(bodyJson, ...args) {
@@ -1780,8 +2588,8 @@ app.use((req, res, next) => {
   };
   res.on("finish", () => {
     const duration = Date.now() - start;
-    if (path7.startsWith("/api")) {
-      let logLine = `${req.method} ${path7} ${res.statusCode} in ${duration}ms`;
+    if (path8.startsWith("/api")) {
+      let logLine = `${req.method} ${path8} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }
@@ -1797,6 +2605,10 @@ app.use((req, res, next) => {
   const server = await registerRoutes(app);
   app.use((err, _req, res, _next) => {
     const status = err.status || err.statusCode || 500;
+    if (err.type === "entity.too.large") {
+      const limit = process.env.BODY_LIMIT || "25mb";
+      return res.status(413).json({ message: `Arquivo muito grande. Limite: ${limit}.` });
+    }
     const message = err.message || "Internal Server Error";
     if (!res.headersSent) {
       res.status(status).json({ message });
@@ -1805,9 +2617,9 @@ app.use((req, res, next) => {
     }
     console.error(err);
   });
-  const uploadsPath = path6.resolve(process.cwd(), "uploads");
-  if (!fs4.existsSync(uploadsPath)) {
-    fs4.mkdirSync(uploadsPath, { recursive: true });
+  const uploadsPath = path7.resolve(process.cwd(), "uploads");
+  if (!fs5.existsSync(uploadsPath)) {
+    fs5.mkdirSync(uploadsPath, { recursive: true });
   }
   app.use("/uploads", express2.static(uploadsPath));
   if (app.get("env") === "development") {

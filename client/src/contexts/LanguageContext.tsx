@@ -22,6 +22,31 @@ const pt: Record<string, string> = {
   delete: 'Excluir',
   save: 'Salvar',
   cancel: 'Cancelar',
+  // Time labels & common UI (Portuguese-only app)
+  oneDayAgo: '1 dia atrás',
+  daysAgo: 'dias atrás',
+  oneWeekAgo: '1 semana atrás',
+  twoWeeksAgo: '2 semanas atrás',
+  threeWeeksAgo: '3 semanas atrás',
+  chapterLabel: 'Capítulo',
+  minRead: 'min',
+  published: 'Publicado',
+  previous: 'Anterior',
+  next: 'Próximo',
+  backToChapters: 'Voltar aos capítulos',
+  bookmark: 'Favoritar',
+  settings: 'Configurações',
+  // Chapters page essentials
+  allChapters: 'Todos os Capítulos',
+  allChaptersDesc: 'A lista completa de capítulos publicados.',
+  searchChapters: 'Pesquisar capítulos...',
+  noChapters: 'Nenhum capítulo disponível ainda.',
+  noChaptersFound: 'Nenhum capítulo encontrado para sua busca.',
+  adjustSearchTerms: 'Tente ajustar seus termos de busca.',
+  chaptersWillAppear: 'Os capítulos aparecerão aqui conforme forem publicados.',
+  // Reader fallbacks
+  chapterNotFound: 'Capítulo não encontrado',
+  chapterNotFoundDesc: 'O capítulo que você procura não existe ou foi movido.',
 };
 
 interface LanguageContextType {

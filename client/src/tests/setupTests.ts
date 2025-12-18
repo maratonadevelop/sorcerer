@@ -9,9 +9,17 @@ if (typeof globalThis.fetch === 'undefined') {
 }
 
 beforeEach(() => {
-  // reset any global fetch mock
+  // reset any global fetch mock installed by a previous test
   // @ts-ignore
   if (globalThis.fetch && (globalThis.fetch as any).mockReset) (globalThis.fetch as any).mockReset();
+  // expose current fetch mock (if any) so wrapper can delegate to it
+  try {
+    if ((globalThis.fetch as any).mock) {
+      (globalThis as any).__TEST_FETCH = globalThis.fetch;
+    } else {
+      (globalThis as any).__TEST_FETCH = undefined;
+    }
+  } catch {}
 });
 
 // Provide basic globals that some libraries rely on when running in Node
@@ -33,21 +41,23 @@ if (typeof (globalThis as any).self === 'undefined') (globalThis as any).self = 
 if (!(globalThis as any).__fetch_wrapped) {
   const nativeFetch = (globalThis as any).fetch;
   (globalThis as any).__originalFetch = nativeFetch;
-  (globalThis as any).fetch = function (input: any, init?: any) {
+  const wrapped = function (input: any, init?: any) {
     try {
       if (typeof input === 'string' && input.startsWith('/')) {
         const origin = (globalThis as any).location?.origin || 'http://localhost';
         input = origin + input;
       } else if (input && typeof input === 'object' && input.url && typeof input.url === 'string' && input.url.startsWith('/')) {
         const origin = (globalThis as any).location?.origin || 'http://localhost';
-        // create a shallow copy to avoid mutating the original Request-like object
         input = new Request(origin + input.url, input as any);
       }
-    } catch (e) {
-      // ignore and let fetch handle it
+    } catch {}
+    const testMock = (globalThis as any).__TEST_FETCH;
+    if (typeof testMock === 'function' && testMock !== wrapped) {
+      return testMock(input, init);
     }
-    return (nativeFetch || (globalThis as any).__originalFetch || (() => Promise.resolve({ ok: true, json: async () => ({}) })))(input as any, init as any);
+    return nativeFetch(input, init);
   } as any;
+  (globalThis as any).fetch = wrapped;
   (globalThis as any).__fetch_wrapped = true;
 }
 
@@ -82,3 +92,11 @@ if (!(globalThis as any).__request_wrapped) {
   }
   (globalThis as any).__request_wrapped = true;
 }
+
+// Provide a noop window.alert for jsdom environment so tests don't crash
+// when UI code uses alert() for error messages.
+try {
+  if (typeof (globalThis as any).alert === 'undefined') {
+    (globalThis as any).alert = (..._args: any[]) => { /* no-op in tests */ };
+  }
+} catch {}

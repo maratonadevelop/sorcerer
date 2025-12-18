@@ -1,4 +1,5 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { withRevisionParam } from "./revision";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -12,9 +13,16 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
+  const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
+  try {
+    if (import.meta.env.DEV) {
+      const tok = typeof window !== 'undefined' ? localStorage.getItem('devToken') : null;
+      if (tok) headers['Authorization'] = `Bearer ${tok}`;
+    }
+  } catch {}
   const res = await fetch(url, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers,
     body: data ? JSON.stringify(data) : undefined,
     credentials: "include",
   });
@@ -29,8 +37,19 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const headers: Record<string, string> = {};
+    try {
+      if (import.meta.env.DEV) {
+        const tok = typeof window !== 'undefined' ? localStorage.getItem('devToken') : null;
+        if (tok) headers['Authorization'] = `Bearer ${tok}`;
+      }
+    } catch {}
+    const url = withRevisionParam(queryKey.join("/") as string);
+    const res = await fetch(url, {
       credentials: "include",
+      headers,
+      // Ensure we bypass any short-term HTTP caches so admin edits reflect immediately
+      cache: 'no-store',
     });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
@@ -47,6 +66,7 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
       refetchOnWindowFocus: false,
+      // Keep data until explicit invalidation, but when we do refetch, bypass HTTP cache via getQueryFn
       staleTime: Infinity,
       retry: false,
     },

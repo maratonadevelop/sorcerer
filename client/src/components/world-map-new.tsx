@@ -235,7 +235,7 @@ export default function WorldMapInteractive({ locations }: WorldMapProps) {
             {locations.map((location) => (
               <Link 
                 key={location.id} 
-                href={`/world/${location.id}`} 
+                href={`/mundo/${location.id}`} 
                 className="absolute transform -translate-x-1/2 -translate-y-1/2"
                 style={{ 
                   left: `${location.mapX}%`, 

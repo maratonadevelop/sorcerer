@@ -1,0 +1,97 @@
+{
+  "characters": [
+    {
+      "id": "lady-elena-sylvaris",
+      "name": "Lady Elena Sylvaris",
+      "position": "Senhora da Casa Sylvaris",
+      "manaRing": "2.2 (Anel da Forja Interna - Fortificação Física)",
+      "appearance": { "height": "1.77m", "build": "alta e atlética", "hair": "longo, grosso e branco", "eyes": "violeta profundo" },
+      "personality": ["destemida","autoritária","estrategista","protetora"],
+      "notes": "Mãos calejadas; presença imponente. Treina herdeiros em combate."
+    },
+    {
+      "id": "melina-duskbane",
+      "name": "Melina Duskbane",
+      "aliases": ["Chama Ruiva"],
+      "position": "Aventureira/Guerreira",
+      "appearance": { "hair": "ruivos como brasas, trança prática", "eyes": "verdes" },
+      "personality": ["corajosa","teimosa","leal"],
+      "notes": "Luvas gastas e botas manchadas de lama e cinzas."
+    },
+    {
+      "id": "kaelus-rhys-sylvaris",
+      "name": "Kaelus Rhys Sylvaris",
+      "dead": true,
+      "ageAtDeath": 18,
+      "position": "Caçula da Casa Sylvaris",
+      "manaRing": "2.3 (Forja Interior)",
+      "notes": "Considerado talento único; corpo nunca encontrado; atualmente relacionado com Aslam."
+    },
+    {
+      "id": "kellen-aurelio",
+      "name": "Kellen Aurelio",
+      "position": "Guerreiro / Líder de grupo",
+      "appearance": { "build": "alto e musculoso", "hair": "negro" },
+      "personality": ["determinado","protetor"],
+      "notes": "Veterano de batalhas; líder nato."
+    },
+    {
+      "id": "lyssandra-1",
+      "name": "Lyssandra",
+      "title": "Lyssandra",
+      "titleI18n": { "pt": "adsasd", "en": "asadsads", "es": "asdadsads" },
+      "description": "",
+      "descriptionI18n": { "pt": "asdasd", "en": "ads", "es": "asdasd" },
+      "imageUrl": "/uploads/d404a050-acae-4b3e-901e-eb71c21cb5f7.png",
+      "role": "protagonist",
+      "createdAt": "2025-09-02T16:12:43.483Z",
+      "updatedAt": "2025-09-02T16:22:33.279Z"
+    }
+    ,
+    {
+      "id": "testador-silvano",
+      "name": "Testador Silvano",
+      "position": "Personagem de Teste",
+      "aliases": ["Silva"],
+      "appearance": { "height": "1.82m", "build": "médio", "hair": "castanho curto", "eyes": "castanhos" },
+      "personality": ["curioso","extravagante","bem-humorado"],
+      "notes": "Entrada criada automaticamente para testes. Não existe no mundo real.",
+      "imageUrl": "/uploads/nOVOCOVER-poster.jpg",
+      "role": "protagonist",
+      "createdAt": "2025-09-13T00:00:00.000Z",
+      "updatedAt": "2025-09-13T00:00:00.000Z"
+    }
+  ],
+  "locations": [
+    {
+      "id": "galvia",
+      "name": "Galvia",
+      "description": "Reino localizado na costa oeste de Luminah, centro de comércio marítimo.",
+      "type": "cidade/porto"
+    },
+    {
+      "id": "valeron",
+      "name": "Valeron",
+      "description": "Cidade humana conhecida por mineração de ouro e metais.",
+      "type": "cidade"
+    },
+    {
+      "id": "elduira",
+      "name": "Eldrida",
+      "description": "Centro político e mágico de Luminah, sede da Guilda de Magos.",
+      "type": "cidade/guilda"
+    }
+  ],
+  "systems": {
+    "manaSystems": {
+      "rings": [
+        { "id": "ring-1", "name": "Anel 1 - Manifestações Iniciais", "description": "Habilidades físicas e primeiras manipulações" },
+        { "id": "ring-2", "name": "Anel 2 - Forja Interna", "description": "Aprimoramentos internos e crafts mágicos" },
+        { "id": "ring-3", "name": "Anel 3 - Expansão", "description": "Manipulação externa de energia" }
+      ]
+    }
+  },
+  "rawCodex": {
+    "summary": "Large free-form notes from the original docx have been preserved here. If you want the full original text saved, we can add it as raw text or split into smaller structured entries."
+  }
+}

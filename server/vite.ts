@@ -32,17 +32,35 @@ export async function setupVite(app: Express, server: Server) {
     customLogger: {
       ...viteLogger,
       error: (msg, options) => {
+        // Log the error details but don't forcibly exit the process here.
+        // Exiting makes it hard to debug Vite startup problems in development.
         viteLogger.error(msg, options);
-        process.exit(1);
+        try {
+          console.error('[vite] error:', typeof msg === 'string' ? msg : JSON.stringify(msg));
+        } catch (e) {
+          console.error('[vite] error (unknown)');
+        }
       },
     },
     server: serverOptions,
     appType: "custom",
   });
 
-  app.use(vite.middlewares);
+  // Wrap Vite middlewares so they never handle API or uploads routes
+  app.use((req, res, next) => {
+    const url = req.originalUrl || req.url || '';
+    if (url.startsWith('/api') || url.startsWith('/uploads')) {
+      return next();
+    }
+    return (vite.middlewares as any)(req, res, next);
+  });
   app.use("*", async (req, res, next) => {
     const url = req.originalUrl;
+
+    // Only handle top-level SPA navigations (GET). Never intercept API or uploads.
+    if (req.method !== 'GET' || url.startsWith('/api') || url.startsWith('/uploads')) {
+      return next();
+    }
 
     try {
       const clientTemplate = path.resolve(

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "galvia",
+    "name": "Galvia",
+    "description": "Reino localizado na costa oeste de Luminah, centro de comércio marítimo.",
+    "mapX": 33,
+    "mapY": 22,
+    "type": "cidade/porto"
+  },
+  {
+    "id": "valeron",
+    "name": "Valeron",
+    "description": "Cidade humana conhecida por mineração de ouro e metais.",
+    "mapX": 48,
+    "mapY": 40,
+    "type": "cidade"
+  },
+  {
+    "id": "eldrida",
+    "name": "Eldrida",
+    "description": "Centro político e mágico de Luminah, sede da Guilda de Magos.",
+    "mapX": 60,
+    "mapY": 30,
+    "type": "cidade/guilda"
+  }
+]

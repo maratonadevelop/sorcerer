@@ -1,0 +1,93 @@
+[
+  {
+    "id": "galvia",
+    "name": "Galvia",
+    "description": "Reino localizado na costa oeste de Luminah, centro de comércio marítimo.",
+    "type": "cidade/porto",
+    "notes": "Mineração e comércio marítimo"
+  },
+  {
+    "id": "valeron",
+    "name": "Valeron",
+    "description": "Cidade humana conhecida por mineração de ouro e metais.",
+    "type": "cidade",
+    "notes": "Mineração"
+  },
+  {
+    "id": "vireth",
+    "name": "Vireth",
+    "description": "Cidade focada em extração de gemas mágicas.",
+    "type": "cidade",
+    "notes": "Gemas mágicas"
+  },
+  {
+    "id": "elduira",
+    "name": "Eldrida",
+    "description": "Centro político e mágico de Luminah, sede da Guilda de Magos.",
+    "type": "cidade/guilda",
+    "notes": "Residência de Lysandra Vespera"
+  },
+  {
+    "id": "calonia",
+    "name": "Calonia",
+    "description": "Reino nas florestas do noroeste de Luminah, onde está a Casa Sylvaris.",
+    "type": "reino",
+    "notes": "Valoriza força e honra; florestas densas"
+  },
+  {
+    "id": "valtoria",
+    "name": "Valtoria",
+    "description": "Reino nas planícies do sul de Luminah, conhecido por agricultura e festivais.",
+    "type": "reino",
+    "notes": "Agricultura"
+  },
+  {
+    "id": "aquarius-archipelago",
+    "name": "Aquarius (Arquipélago)",
+    "description": "Região subtropical composta por ilhas com reinos marítimos e seres aquáticos.",
+    "type": "arquipélago",
+    "notes": "Centro de comércio marítimo global"
+  },
+  {
+    "id": "umbra",
+    "name": "Umbra",
+    "description": "Continente das Sombras, frio e escuro com florestas e musgos adaptados à baixa luminosidade.",
+    "type": "continente",
+    "notes": "Clima frio e sombrio"
+  },
+  {
+    "id": "silvanum",
+    "name": "Silvanum",
+    "description": "Continente das Florestas, temperado com florestas densas, montanhas e vales.",
+    "type": "continente",
+    "notes": "Corte das Fadas, Dragões Ancestrais"
+  },
+  {
+    "id": "luminah",
+    "name": "Luminah",
+    "description": "Continente da Luz, subtropical com reinos humanos e élficos; esperança e conhecimento.",
+    "type": "continente",
+    "notes": "Eldrida, Calonia, Valtoria, Galvia"
+  },
+  {
+    "id": "ferros",
+    "name": "Ferros",
+    "description": "Continente das Montanhas, quente e árido, com minas e confederação de anões.",
+    "type": "continente",
+    "notes": "Cidades subterrâneas anãs, Mekanix"
+  },
+  {
+    "id": "akeli",
+    "name": "Akeli",
+    "description": "Continente das Planícies, clima temperado/subtropical; planícies vastas.",
+    "type": "continente",
+    "notes": "Cidades humanas com traços asiáticos"
+  },
+  {
+    "id": "arena-leste",
+    "name": "Arena Leste - Campeonato Arcano",
+    "description": "Arena imponente com cinco zonas elementais e núcleos de mana; palco do Campeonato Arcano.",
+    "type": "arena/evento",
+    "notes": "Dividida em zonas: terra, água, fogo, ar e éter"
+  }
+]

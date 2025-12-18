@@ -2,11 +2,12 @@
 import Navigation from "@/components/navigation";
 import Footer from "@/components/footer";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import type { BlogPost } from "@shared/schema";
 import { useLanguage } from '@/contexts/LanguageContext';
+import FilterBar, { type FilterOption } from '@/components/filter-bar';
 
 export default function Blog() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -19,12 +20,38 @@ export default function Blog() {
 
   const { language, t } = useLanguage();
 
-  const categories = ["all", "update", "worldBuilding", "behindScenes", "research"];
+  // UI filter keys (mapped to backend categories later)
+  const categories = ["all", "update", "worldBuilding", "behindScenes", "research"] as const;
+
+  const categoryOptions: FilterOption[] = categories.map(cat => ({
+    value: cat,
+    label: cat === 'all'
+      ? (t.all || 'Todos')
+      : cat === 'update'
+        ? (t.update || 'Atualizações')
+        : cat === 'worldBuilding'
+          ? (t.worldBuilding || 'Construção de Mundo')
+          : cat === 'behindScenes'
+            ? (t.behindScenes || 'Bastidores')
+            : (t.research || 'Pesquisa')
+  }));
+
+  // Map UI keys -> backend stored slugs
+  const categorySlugMap: Record<string, string | null> = {
+    all: null,
+    update: 'update',
+    worldBuilding: 'world-building',
+    behindScenes: 'behind-scenes',
+    research: 'research',
+  };
+
+  const activeCategorySlug = categorySlugMap[selectedCategory] ?? null;
 
   const filteredPosts = blogPosts.filter(post => {
-    const matchesSearch = post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         post.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === "all" || post.category === selectedCategory;
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = (post.title || '').toLowerCase().includes(q) ||
+                         (post.excerpt || '').toLowerCase().includes(q);
+    const matchesCategory = !activeCategorySlug || post.category === activeCategorySlug;
     return matchesSearch && matchesCategory;
   });
 
@@ -64,37 +91,28 @@ export default function Blog() {
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h1 className="font-display text-4xl md:text-5xl font-bold text-primary mb-4" data-testid="text-blog-title">
-              {t.blogTitle}
+              {t.blogTitle || 'Blog'}
             </h1>
             <p className="text-muted-foreground text-lg max-w-2xl mx-auto mb-8">
-              {t.blogDesc}
+              {t.blogDesc || 'Novidades, bastidores e pesquisas sobre o universo de Sorcerer.'}
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center max-w-3xl mx-auto">
+            <FilterBar
+              options={categoryOptions}
+              value={selectedCategory}
+              onChange={setSelectedCategory}
+              leading={
                 <Input
-                type="text"
-                placeholder={t.searchBlog}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="bg-input border-border text-foreground placeholder:text-muted-foreground"
-                data-testid="input-search-blog"
-              />
-              
-              <div className="flex gap-2 flex-wrap">
-  {categories.map((category) => (
-                  <Button
-                    key={category}
-                    variant={selectedCategory === category ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setSelectedCategory(category)}
-                    className="capitalize"
-                    data-testid={`button-filter-${category}`}
-                  >
-          {category === 'all' ? t.all : category === 'behindScenes' ? t.behindScenes || 'Bastidores' : category}
-                  </Button>
-                ))}
-              </div>
-            </div>
+                  type="text"
+                  placeholder={t.searchBlog || 'Buscar no blog...'}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="bg-input border-border text-foreground placeholder:text-muted-foreground w-full sm:w-80 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+                  data-testid="input-search-blog"
+                />
+              }
+              className="max-w-5xl mx-auto justify-start sm:justify-center"
+            />
           </div>
           
           {isLoading ? (
@@ -126,7 +144,13 @@ export default function Blog() {
                   <CardContent className="p-6" onClick={() => window.location.href = `/blog/${post.slug}`}>
                     <div className="flex items-center mb-3">
                       <span className={`px-3 py-1 rounded-full text-sm font-medium ${getCategoryColor(post.category)}`}>
-                        {post.category === "behind-scenes" ? t.behindScenes || 'Bastidores' : post.category}
+                        {post.category === 'update'
+                          ? (t.update || 'Atualizações')
+                          : post.category === 'world-building'
+                            ? (t.worldBuilding || 'WorldBuilding')
+                            : post.category === 'behind-scenes'
+                              ? (t.behindScenes || 'Bastidores')
+                              : (t.research || 'Pesquisa')}
                       </span>
                       <span className="text-muted-foreground text-sm ml-4" data-testid={`text-blog-date-${post.id}`}>
                         {timeAgo(post.publishedAt)}
@@ -141,7 +165,7 @@ export default function Blog() {
                     <div className="mt-4 flex justify-end">
                       <Button
                         variant="default"
-                        className="btn-gold btn-font h-10 px-4"
+                        className="btn-gold btn-font h-10 px-4 focus-visible:outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
                         data-testid={`button-read-blog-${post.id}`}
                         onClick={() => window.location.href = `/blog/${post.slug}`}
                       >

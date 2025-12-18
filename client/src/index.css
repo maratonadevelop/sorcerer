@@ -4,32 +4,33 @@
 @tailwind utilities;
 
 :root {
-  --background: hsl(220, 25%, 8%);
+  /* DARKER THEME: reduce lightness for a deeper charcoal/graphite feel */
+  --background: hsl(220, 25%, 5%); /* was 8% */
   --foreground: hsl(45, 20%, 90%);
-  --card: hsl(220, 25%, 12%);
+  --card: hsl(220, 25%, 8%); /* was 12% */
   --card-foreground: hsl(45, 15%, 85%);
-  --popover: hsl(220, 25%, 12%);
+  --popover: hsl(220, 25%, 8%); /* was 12% */
   --popover-foreground: hsl(45, 15%, 85%);
   --primary: hsl(45, 90%, 65%);
   --primary-foreground: hsl(220, 25%, 8%);
   /* Make secondary a complementary gold tone so existing `bg-secondary` buttons become golden */
   --secondary: hsl(42, 85%, 45%);
   --secondary-foreground: hsl(220, 25%, 8%);
-  --muted: hsl(220, 20%, 15%);
+  --muted: hsl(220, 20%, 10%); /* was 15% */
   --muted-foreground: hsl(45, 10%, 70%);
   --accent: hsl(30, 40%, 45%);
   --accent-foreground: hsl(45, 20%, 90%);
   --destructive: hsl(0, 65%, 50%);
   --destructive-foreground: hsl(45, 20%, 90%);
-  --border: hsl(220, 15%, 20%);
-  --input: hsl(220, 15%, 20%);
+  --border: hsl(220, 15%, 12%); /* slightly darker border */
+  --input: hsl(220, 15%, 12%);
   --ring: hsl(45, 90%, 65%);
   --chart-1: hsl(45, 90%, 65%);
   --chart-2: hsl(159.7826, 100%, 36.0784%);
   --chart-3: hsl(42.0290, 92.8251%, 56.2745%);
   --chart-4: hsl(147.1429, 78.5047%, 41.9608%);
   --chart-5: hsl(341.4894, 75.2000%, 50.9804%);
-  --sidebar: hsl(220, 25%, 12%);
+  --sidebar: hsl(220, 25%, 8%);
   --sidebar-foreground: hsl(45, 15%, 85%);
   --sidebar-primary: hsl(45, 90%, 65%);
   --sidebar-primary-foreground: hsl(220, 25%, 8%);
@@ -43,28 +44,31 @@
   --font-serif: 'Crimson Text', serif;
   --font-map: 'Cinzel Decorative', 'Cinzel', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
   --font-mono: 'Fira Code', monospace;
+  --reader-font-size: 16px;
+  --reader-line-height: 1.85;
   --radius: 0.75rem;
 }
 
 .dark {
-  --background: hsl(220, 25%, 8%);
+  /* Mirror darker tokens for explicit .dark class as well */
+  --background: hsl(220, 25%, 5%);
   --foreground: hsl(45, 20%, 90%);
-  --card: hsl(220, 25%, 12%);
+  --card: hsl(220, 25%, 8%);
   --card-foreground: hsl(45, 15%, 85%);
-  --popover: hsl(220, 25%, 12%);
+  --popover: hsl(220, 25%, 8%);
   --popover-foreground: hsl(45, 15%, 85%);
   --primary: hsl(45, 90%, 65%);
   --primary-foreground: hsl(220, 25%, 8%);
   --secondary: hsl(260, 50%, 25%);
   --secondary-foreground: hsl(45, 20%, 90%);
-  --muted: hsl(220, 20%, 15%);
+  --muted: hsl(220, 20%, 10%);
   --muted-foreground: hsl(45, 10%, 70%);
   --accent: hsl(30, 40%, 45%);
   --accent-foreground: hsl(45, 20%, 90%);
   --destructive: hsl(0, 65%, 50%);
   --destructive-foreground: hsl(45, 20%, 90%);
-  --border: hsl(220, 15%, 20%);
-  --input: hsl(220, 15%, 20%);
+  --border: hsl(220, 15%, 12%);
+  --input: hsl(220, 15%, 12%);
   --ring: hsl(45, 90%, 65%);
 }
 
@@ -88,6 +92,66 @@
   .font-body {
     font-family: var(--font-body);
   }
+
+  /* Standardized rich-content typography for reading (chapters/codex/blog/etc)
+     - body text slightly gray
+     - bold text closer to white
+     - ignores inline pasted font/color/size so everything matches the default style */
+  .content-prose {
+    font-size: var(--reader-font-size);
+    line-height: var(--reader-line-height);
+    color: var(--muted-foreground);
+    --tw-prose-body: var(--muted-foreground);
+    --tw-prose-invert-body: var(--muted-foreground);
+    --tw-prose-headings: var(--foreground);
+    --tw-prose-invert-headings: var(--foreground);
+    --tw-prose-lead: var(--foreground);
+    --tw-prose-invert-lead: var(--foreground);
+    --tw-prose-links: var(--primary);
+    --tw-prose-invert-links: var(--primary);
+    --tw-prose-bold: var(--foreground);
+    --tw-prose-invert-bold: var(--foreground);
+    --tw-prose-counters: var(--muted-foreground);
+    --tw-prose-invert-counters: var(--muted-foreground);
+    --tw-prose-bullets: var(--muted-foreground);
+    --tw-prose-invert-bullets: var(--muted-foreground);
+    --tw-prose-hr: var(--border);
+    --tw-prose-invert-hr: var(--border);
+    --tw-prose-quotes: var(--foreground);
+    --tw-prose-invert-quotes: var(--foreground);
+    --tw-prose-quote-borders: var(--border);
+    --tw-prose-invert-quote-borders: var(--border);
+    --tw-prose-captions: var(--muted-foreground);
+    --tw-prose-invert-captions: var(--muted-foreground);
+    --tw-prose-code: var(--foreground);
+    --tw-prose-invert-code: var(--foreground);
+    --tw-prose-pre-code: var(--foreground);
+    --tw-prose-invert-pre-code: var(--foreground);
+    --tw-prose-pre-bg: var(--muted);
+    --tw-prose-invert-pre-bg: var(--muted);
+    --tw-prose-th-borders: var(--border);
+    --tw-prose-invert-th-borders: var(--border);
+    --tw-prose-td-borders: var(--border);
+    --tw-prose-invert-td-borders: var(--border);
+  }
+
+  .content-prose :where([style*="font-family" i]) { font-family: inherit !important; }
+  .content-prose :where([style*="font-size" i]) { font-size: inherit !important; }
+  .content-prose :where([style*="color" i]) { color: inherit !important; }
+
+  /* Force default (non-bold) text to remain muted gray in reading view.
+     Some typography styles can still push a lighter color under `prose-invert`. */
+  .content-prose :where(p, li, blockquote, figcaption) { color: var(--muted-foreground) !important; }
+
+  .content-prose :where(strong, b) { color: var(--foreground) !important; }
+  .content-prose :where(h1, h2, h3, h4, h5, h6) {
+    color: var(--foreground) !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+    margin: 0 0 1em 0 !important;
+    font-weight: 700 !important;
+  }
+  .content-prose :where(a) { color: var(--primary) !important; }
   
   .magical-gradient {
     background: linear-gradient(135deg, hsl(260, 50%, 25%) 0%, hsl(220, 25%, 8%) 50%, hsl(30, 40%, 15%) 100%);
@@ -197,9 +261,11 @@
   }
   
   .hover-glow:hover {
-    box-shadow: 0 0 20px hsl(45, 90%, 65%, 0.3);
+    box-shadow: 0 0 20px hsl(45, 90%, 65%, 0.24);
     transform: translateY(-2px);
   }
+  
+  /* no special focus outline beyond default ring utilities */
   
   .scroll-indicator {
     position: fixed;
@@ -240,6 +306,35 @@
   
   .chapter-card:hover::before {
     left: 100%;
+  }
+
+  /* Equal-height card helper for grid layouts */
+  .card-equal { height: 520px; }
+  @media (max-width: 640px) {
+    .card-equal { height: 420px; }
+  }
+
+  /* Multi-line clamp for excerpts without plugin */
+  .clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .clamp-1 {
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
   /* Hero particles: subtle floating foreground particles with lightweight parallax */
@@ -457,10 +552,18 @@
 .reveal[data-delay="medium"] { transition-delay: 160ms }
 .reveal[data-delay="large"] { transition-delay: 280ms }
 
-/* Section divider with gentle wave and fade-in */
-.section-divider { opacity: 0; transform: translateY(12px); transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); }
+/* Section divider: aurora style */
+.section-divider { position: relative; height: 64px; opacity: 0; transform: translateY(10px); transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); overflow: hidden; }
 .section-divider--visible { opacity: 1; transform: translateY(0); }
-.section-divider .divider-path { opacity: 0.85; filter: blur(8px); }
+.section-divider.aurora { filter: saturate(1.02) contrast(1); }
+.section-divider .aurora-layer { position: absolute; left: -10%; right: -10%; height: 140%; top: -20%; opacity: 0.6; filter: blur(14px); transform: translateY(0) scale(1.02); transition: opacity 420ms ease, transform 420ms ease; will-change: transform, opacity; }
+.section-divider .aurora-1 { background: radial-gradient(60% 40% at 20% 50%, rgba(255,220,140,0.12), transparent 65%), radial-gradient(50% 40% at 60% 60%, rgba(255,180,90,0.10), transparent 70%); animation: aurora-flow-1 12s ease-in-out infinite; }
+.section-divider .aurora-2 { background: radial-gradient(60% 40% at 40% 50%, rgba(160,130,255,0.10), transparent 65%), radial-gradient(55% 42% at 80% 60%, rgba(100,200,255,0.08), transparent 70%); animation: aurora-flow-2 16s ease-in-out infinite; mix-blend-mode: screen; }
+.section-divider .aurora-3 { background: radial-gradient(60% 40% at 70% 50%, rgba(255,240,200,0.10), transparent 65%), radial-gradient(45% 40% at 30% 60%, rgba(255,170,100,0.08), transparent 70%); animation: aurora-flow-3 18s ease-in-out infinite; }
+
+@keyframes aurora-flow-1 { 0% { transform: translateY(6px) translateX(-6%) scale(1.02); } 50% { transform: translateY(-4px) translateX(6%) scale(1.02); } 100% { transform: translateY(6px) translateX(-6%) scale(1.02); } }
+@keyframes aurora-flow-2 { 0% { transform: translateY(4px) translateX(4%) scale(1.01); } 50% { transform: translateY(-6px) translateX(-4%) scale(1.03); } 100% { transform: translateY(4px) translateX(4%) scale(1.01); } }
+@keyframes aurora-flow-3 { 0% { transform: translateY(8px) translateX(2%) scale(1.00); } 50% { transform: translateY(-2px) translateX(-2%) scale(1.02); } 100% { transform: translateY(8px) translateX(2%) scale(1.00); } }
 
 /* Parallax layer base */
 .parallax-layer { transition: transform 220ms linear; will-change: transform; }
@@ -511,6 +614,20 @@
   section { padding-top: calc(5rem + 1rem); padding-bottom: calc(5rem + 1rem); }
   /* extra small margin between adjacent sections to avoid feeling cramped */
   section + section { margin-top: 1rem; }
+
+  /* Soft fade edges to blend sections more naturally */
+  .soft-fade::before,
+  .soft-fade::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 52px;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .soft-fade::before { top: 0; background: linear-gradient(to bottom, rgba(0,0,0,0.28), rgba(0,0,0,0)); }
+  .soft-fade::after { bottom: 0; background: linear-gradient(to top, rgba(0,0,0,0.22), rgba(0,0,0,0)); }
 
   /* Fluid section divider animations */
   .section-divider { overflow: visible; pointer-events: none; position: relative; }
@@ -578,39 +695,127 @@
     .section-divider::before { opacity: 0 !important; }
   }
 
-/* User requested: remove the footer/section transition stripe entirely */
+/* SectionDivider hidden for a more natural flow between sections */
 .section-divider { display: none !important; }
 
-.codex-wrapper { position: relative; overflow: visible; }
-.codex-bg {
-  /* full-bleed video container that spans the viewport width and extends to match visual framing */
+/* Alternate divider: diagonal shimmer ribbon */
+.section-divider-alt { position: relative; height: 64px; overflow: hidden; opacity: 0; transform: translateY(10px); transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); }
+.section-divider-alt--visible { opacity: 1; transform: translateY(0); }
+.section-divider-alt .ribbon-bg { position: absolute; left: -10%; right: -10%; top: 0; bottom: 0; background: linear-gradient(100deg, rgba(18,18,22,0.0) 0%, rgba(255,210,140,0.08) 32%, rgba(255,180,90,0.10) 52%, rgba(18,18,22,0.0) 80%); transform: skewY(-4deg) translateY(12px); filter: blur(10px) saturate(1.02); }
+.section-divider-alt .ribbon-glow { position: absolute; left: 12%; right: 12%; top: 16px; height: 32px; background: radial-gradient(40% 60% at 50% 50%, rgba(255,220,140,0.12), rgba(255,180,70,0.0)); filter: blur(12px); opacity: 0.9; animation: ribbon-breathe 10s ease-in-out infinite; }
+@keyframes ribbon-breathe { 0% { transform: translateY(0) scaleX(1); opacity: 0.12; } 50% { transform: translateY(-6px) scaleX(1.04); opacity: 0.22; } 100% { transform: translateY(0) scaleX(1); opacity: 0.12; } }
+
+/* Magic divider: animated gradient bed, bobbing wave, and comet streaks */
+.section-divider-magic { position: relative; height: 80px; overflow: hidden; opacity: 0; transform: translateY(12px); transition: opacity 420ms ease, transform 420ms cubic-bezier(.2,.9,.2,1); }
+.section-divider-magic--visible { opacity: 1; transform: translateY(0); }
+.section-divider-magic .magic-bed { position: absolute; inset: 0; background:
+  /* vertical degrade to bridge from darker codex into blog background */
+  linear-gradient(to bottom, rgba(16,16,18,0.45), rgba(16,16,18,0.18), rgba(16,16,18,0.0)),
+  radial-gradient(60% 50% at 30% 60%, rgba(255,210,140,0.08), transparent 70%),
+  radial-gradient(60% 55% at 70% 40%, rgba(120,160,255,0.08), transparent 72%),
+  linear-gradient(to right, rgba(18,18,22,0.0), rgba(255,190,100,0.06), rgba(18,18,22,0.0));
+  filter: blur(10px) saturate(1.02) brightness(1.02);
+}
+.section-divider-magic .magic-wave { position: absolute; inset: 0; transform-origin: center; animation: magic-wave-bob 9s ease-in-out infinite; }
+@keyframes magic-wave-bob { 0% { transform: translateY(2px) scaleX(1); } 50% { transform: translateY(-6px) scaleX(1.02); } 100% { transform: translateY(2px) scaleX(1); } }
+.magic-comet { position: absolute; height: 2px; width: 120px; background: linear-gradient(90deg, rgba(255,255,255,0.0), rgba(255,240,180,0.95), rgba(255,190,90,0.08)); filter: blur(1.5px) saturate(1.08); border-radius: 12px; opacity: 0; }
+.section-divider-magic--visible .magic-comet { animation: comet-fly 7.5s linear infinite; }
+@keyframes comet-fly { 0% { transform: translateX(-20vw) translateY(10px) rotate(-6deg); opacity: 0; } 10% { opacity: 1; } 60% { opacity: 0.95; } 100% { transform: translateX(120vw) translateY(-6px) rotate(-6deg); opacity: 0; } }
+.magic-comet.mc-1 { top: 22px; animation-delay: 0s; }
+.magic-comet.mc-2 { top: 12px; animation-delay: 1.5s; }
+.magic-comet.mc-3 { top: 36px; animation-delay: 3.2s; }
+.magic-comet.mc-4 { top: 48px; animation-delay: 4.8s; }
+.magic-comet.mc-5 { top: 28px; animation-delay: 6s; }
+.magic-comet.mc-6 { top: 18px; animation-delay: 7.2s; }
+
+/* Gradient bridge utility to strengthen vertical degrade at the start of a section */
+.gradient-bridge-top { position: relative; }
+.gradient-bridge-top::before {
+  content: '';
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100vw; /* force full viewport width */
-  max-width: none;
-  /* extend both above and below the section so the visual framing matches the video crop */
-  top: -6rem;
-  height: calc(100% + 22rem);
+  left: 0; right: 0; top: -80px; height: 160px;
+  background: linear-gradient(to bottom, rgba(16,16,18,0.55), rgba(16,16,18,0.32) 35%, rgba(16,16,18,0.16) 65%, rgba(16,16,18,0.0));
+  pointer-events: none; z-index: 1;
+}
+
+.codex-wrapper { position: relative; overflow: visible; max-width: none; }
+/* Fix the Codex background video so it remains stable and doesn’t jump/zoom on tab changes */
+.codex-bg {
+  position: relative; /* scoped to section */
   z-index: 0;
-  pointer-events: none;
   overflow: hidden;
+  width: 100vw; /* ensure edge-to-edge */
+}
+
+/* Blurred poster backdrop to avoid black side bars while keeping main video/image object-contained */
+.codex-bg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  /* Soft neutral gradient backdrop to avoid hard bands while keeping depth */
+  background: radial-gradient(120% 140% at 50% 60%, rgba(16,16,18,0.96) 0%, rgba(16,16,18,0.88) 40%, rgba(16,16,18,0.70) 62%, rgba(16,16,18,0.46) 78%, rgba(16,16,18,0.18) 100%);
+  filter: none;
+  transform: none;
+  z-index: 0;
+}
+
+/* Subtle living glow behind the video for a more organic feel */
+.codex-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(50% 40% at 30% 65%, rgba(255,210,140,0.06), transparent 70%),
+    radial-gradient(60% 45% at 70% 45%, rgba(120,160,255,0.05), transparent 72%);
+  mix-blend-mode: screen;
+  opacity: 0.9;
+  animation: codex-glow-drift 22s ease-in-out infinite;
+  z-index: 2;
+  pointer-events: none;
+}
+
+@keyframes codex-glow-drift {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0.9; }
+  50% { transform: translateY(-10px) translateX(8px) scale(1.02); opacity: 0.85; }
+  100% { transform: translateY(0) translateX(0) scale(1); opacity: 0.9; }
+}
+
+/* Smooth top fade for Codex section so it blends naturally into previous section */
+.codex-wrapper::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; top: -28px; height: 56px;
+  background: linear-gradient(to bottom, rgba(0,0,0,0.16), rgba(0,0,0,0.0));
+  z-index: 50; pointer-events: none;
+}
+
+/* Ensure codex section is visible in narrow viewports (Simple Browser) */
+@media (max-height: 700px) {
+  .codex-bg {
+    min-height: 60vh;
+  }
 }
 .codex-bg video {
   position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  /* video fills the codex-bg box so overlay (which matches the box) covers it entirely */
-  top: 0;
-  width: 100vw;
+  inset: 0; /* fill container */
+  width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: cover; /* prefer cover to eliminate side gutters on ultra-wide */
+  object-position: 50% 40%; /* frame slightly higher so crossfade feels from top */
   display: block;
   z-index: 1;
+  contain: paint;
+  will-change: opacity; /* avoid transform re-triggers on tab switches */
+  pointer-events: none; /* allow CTA clicks above */
 }
-.hero-like-video { filter: brightness(0.36) saturate(0.9) contrast(0.9) blur(0px); transform: scale(1.03); }
+.codex-cover video { object-fit: cover !important; }
+.hero-like-video { filter: brightness(0.36) saturate(0.9) contrast(0.9) blur(0px); }
 .codex-bg-overlay { position: absolute; left: 0; right: 0; top: 0; bottom: 0; background-color: rgba(0,0,0,0.70); z-index: 2; pointer-events: none; }
 .codex-content { position: relative; z-index: 40; }
+
+/* Footer links: prevent inherited underline, show only on hover with primary color */
+footer a { text-decoration: none; }
+footer a:hover { text-decoration: underline; text-underline-offset: 4px; }
 
 /* Reduced card sizing for Codex section so a video background fits better */
 .codex-card { padding: 0.5rem; border-radius: 0.75rem; }
@@ -619,11 +824,11 @@
 .codex-card p, .codex-card h4 { font-size: 0.9rem; margin-bottom: 0.35rem; }
 .codex-card .space-y-4 > * { margin-top: 0.35rem; margin-bottom: 0.35rem; }
 
-/* Make the codex-wrapper taller so the video reaches a bit beyond the Codex CTA button visually */
+/* Add extra padding so content has breathing room above the fixed video */
 .codex-wrapper { padding-bottom: 10rem; }
 
 /* CTA overlay centered above video */
-.codex-cta-over { position: absolute; left: 50%; transform: translateX(-50%); bottom: 0.35rem; z-index: 140; }
+.codex-cta-over { position: absolute; left: 50%; transform: translate(-50%, 0); bottom: 4.5rem; z-index: 140; }
 
 .codex-cta-over .btn-gold {
   padding-left: 4rem; padding-right: 4rem; padding-top: 1rem; padding-bottom: 1rem;
@@ -642,10 +847,21 @@
   text-shadow: 0 0 18px rgba(255,245,180,0.95), 0 6px 28px rgba(255,180,70,0.12);
 }
 
+/* Full-bleed helper to stretch a child to viewport width inside a centered container */
+.full-bleed { position: relative; left: 50%; right: 50%; margin-left: -50vw; margin-right: -50vw; width: 100vw; max-width: 100vw; }
+
 /* optional stronger focus/glow for accessibility */
 .codex-cta-over .btn-gold:focus-visible {
   outline: none;
   box-shadow: 0 0 0 4px rgba(255,220,140,0.06), 0 36px 96px rgba(255,190,80,0.22);
+}
+
+/* Static bottom shadow to anchor the transition into next section */
+.codex-bottom-shadow {
+  position: absolute; inset: 0; z-index: 26; pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(0,0,0,0.0) 55%, rgba(0,0,0,0.22) 78%, rgba(0,0,0,0.42)),
+    radial-gradient(70% 40% at 50% 85%, rgba(255,210,140,0.08), transparent 70%);
 }
 
 /* Animated darkening strip for title/subtitle area that sits above the video but below content */
@@ -675,13 +891,7 @@
   z-index: 0;
   display: block;
 }
-.codex-bg video[aria-hidden="true"] { display: block; }
-.codex-bg .poster-hidden { display: none; }
-
-/* If video fails to load, show the poster image */
-.codex-bg video[poster] { visibility: visible; }
-.codex-bg video[poster].error { display: none; }
-.codex-bg .poster-hidden { display: block; }
+/* remove conflicting video/poster overrides to respect component classes */
 
 /* replicate the hero title glow for Codex section */
 .codex-content .section-title {
@@ -703,9 +913,8 @@
 }
 .codex-content .section-title:hover::after { transform: translateX(-50%) scaleX(1); opacity: 1; }
 
-@media (max-width: 768px) {
-  .codex-bg video { transform: scale(1.05); }
-}
+/* No scale on mobile to avoid zoom effect during layout shifts */
+@media (max-width: 768px) { .codex-bg video { transform: translate(-50%, -50%); } }
 
 /* Map background wrapper for WorldMap component */
 .map-bg { position: relative; overflow: hidden; }
@@ -725,6 +934,57 @@
 
 /* overlay badges used to position labels on the map */
 /* overlay badges removed */
+
+
+/* --- Codex crossfade system --- */
+.codex-crossfade {
+  /* fade progress: 0 = video fully visible; 1 = video fully faded into gradient */
+  --codex-fade: 0;
+  --codex-overlayOpacity: 0.75; /* dynamically updated by JS */
+  --codex-noiseOpacity: 0.03;   /* dynamically updated by JS */
+}
+
+.codex-video { opacity: calc(1 - var(--codex-fade)); transition: opacity 520ms cubic-bezier(.2,.9,.2,1); }
+.codex-dark-overlay { background-color: rgba(0,0,0,var(--codex-overlayOpacity)); transition: background-color 520ms cubic-bezier(.2,.9,.2,1); }
+
+/* Themed gradient bed (revealed as video fades out) */
+.codex-crossfade-bed {
+  opacity: calc(0.85 * var(--codex-fade));
+  transition: opacity 520ms cubic-bezier(.2,.9,.2,1), filter 520ms cubic-bezier(.2,.9,.2,1);
+  background:
+    radial-gradient(90% 70% at 50% 60%, rgba(22,22,26,0.92), rgba(18,18,22,0.90) 40%, rgba(16,16,18,0.72) 70%, rgba(12,12,14,0.48) 90%, rgba(10,10,12,0.28) 100%),
+    linear-gradient(180deg, rgba(255,210,140,0.10), rgba(120,160,255,0.10) 40%, rgba(255,190,120,0.06) 70%, rgba(16,16,18,0.0)),
+    radial-gradient(40% 40% at 30% 70%, rgba(255,210,140,0.10), transparent 70%),
+    radial-gradient(40% 40% at 70% 40%, rgba(120,160,255,0.10), transparent 70%);
+  filter: saturate(1.02) contrast(1.02);
+}
+
+/* Fine noise to avoid banding in gradients (tiny PNG/AVIF could be better; here CSS-generated) */
+.codex-noise {
+  opacity: var(--codex-noiseOpacity);
+  transition: opacity 520ms cubic-bezier(.2,.9,.2,1);
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, rgba(255,255,255,0.08), transparent 60%),
+    radial-gradient(1px 1px at 70% 40%, rgba(255,255,255,0.07), transparent 60%),
+    radial-gradient(1px 1px at 40% 80%, rgba(255,255,255,0.06), transparent 60%),
+    radial-gradient(1px 1px at 60% 60%, rgba(255,255,255,0.07), transparent 60%);
+  background-size: 180px 180px, 220px 220px, 160px 160px, 260px 260px;
+  mix-blend-mode: soft-light;
+}
+
+/* Soft mask on edges to prevent a hard line while transitioning */
+.codex-mask {
+  position: absolute; inset: 0; z-index: 31; pointer-events: none;
+  background:
+    linear-gradient(to bottom, rgba(0,0,0,0.22), rgba(0,0,0,0.10) 22%, rgba(0,0,0,0.0) 48%),
+    linear-gradient(to top, rgba(0,0,0,0.18), rgba(0,0,0,0.08) 22%, rgba(0,0,0,0.0) 48%);
+  opacity: calc(0.55 - 0.35 * var(--codex-fade));
+  transition: opacity 520ms cubic-bezier(.2,.9,.2,1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-video, .codex-crossfade-bed, .codex-noise, .codex-dark-overlay { transition: none !important; }
+}
 
 
 

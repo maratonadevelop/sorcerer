@@ -19,7 +19,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:5000',
+        // allow overriding backend port via BACKEND_PORT or PORT env when running dev
+        target: `http://localhost:${process.env.BACKEND_PORT || process.env.PORT || 5000}`,
         changeOrigin: true,
         secure: false,
       },

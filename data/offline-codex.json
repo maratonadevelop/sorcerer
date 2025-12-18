@@ -1,5 +1,27 @@
 [
   {
+    "id": "char-lady-elena",
+    "title": "Lady Elena Sylvaris",
+    "description": "Mãos calejadas; presença imponente. Treina herdeiros em combate. (Casa Sylvaris)",
+    "category": "characters",
+    "imageUrl": null
+  },
+  {
+    "id": "char-melina",
+    "title": "Melina Duskbane",
+    "description": "Aventureira conhecida como 'Chama Ruiva'. Luvas e botas gastas; corajosa e leal.",
+    "category": "characters",
+    "imageUrl": null
+  },
+  {
+    "id": "loc-galvia",
+    "title": "Galvia",
+    "description": "Reino localizado na costa oeste de Luminah, centro de comércio marítimo.",
+    "category": "locations",
+    "imageUrl": null
+  }
+,
+  {
     "id": "8becef68-5372-4750-bd00-498275660db3",
     "title": "World",
     "titleI18n": {

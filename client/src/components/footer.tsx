@@ -33,21 +33,21 @@ export default function Footer() {
             <div className="flex space-x-4">
               <a 
                 href="#" 
-                className="text-muted-foreground hover:text-primary transition-colors"
+                className="hover:text-primary transition-colors"
                 data-testid="link-twitter"
               >
                 <Twitter className="h-5 w-5" />
               </a>
               <a 
                 href="#" 
-                className="text-muted-foreground hover:text-primary transition-colors"
+                className="hover:text-primary transition-colors"
                 data-testid="link-instagram"
               >
                 <Instagram className="h-5 w-5" />
               </a>
               <a 
                 href="#" 
-                className="text-muted-foreground hover:text-primary transition-colors"
+                className="hover:text-primary transition-colors"
                 data-testid="link-discord"
               >
                 <MessageCircle className="h-5 w-5" />
@@ -64,7 +64,7 @@ export default function Footer() {
                 <li key={link.name}>
                   <Link 
                     href={link.href}
-                    className="text-muted-foreground hover:text-primary transition-colors"
+                    className="hover:text-primary transition-colors"
                     data-testid={`link-footer-${link.name.toLowerCase().replace(' ', '-')}`}
                   >
                     {link.href === '/chapters' ? t.chapters : link.href === '/characters' ? t.characters : link.href === '/world' ? t.world : link.href === '/codex' ? t.codex : link.name}
@@ -83,7 +83,7 @@ export default function Footer() {
                 <li key={link.name}>
                   <a 
                     href={link.href}
-                    className="text-muted-foreground hover:text-primary transition-colors"
+                    className="hover:text-primary transition-colors"
                     data-testid={`link-support-${link.name.toLowerCase().replace(' ', '-')}`}
                   >
                     {link.name}

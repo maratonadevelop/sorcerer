@@ -1,5 +1,47 @@
 [
   {
+    "id": "lady-elena-sylvaris",
+    "name": "Lady Elena Sylvaris",
+    "title": "Senhora da Casa Sylvaris",
+    "description": "Nascida nas florestas de Calonia, Elena é uma guerreira disciplinada que protege incansavelmente seus filhos.",
+    "slug": "lady-elena-sylvaris",
+    "imageUrl": null,
+    "role": "supporting",
+    "story": "Lady Elena nasceu no coração das florestas de Calonia, em Luminah, filha de uma linhagem de guerreiros que honravam tanto a força física quanto a disciplina mágica. Desde jovem destacou-se pela coragem e pela visão estratégica, escolhendo o caminho da espada reforçada com mana em vez da corte repleta de intrigas. Sua vida foi marcada pela dureza dos treinamentos e pela responsabilidade de carregar o brasão da família.\n\nComo Senhora da Casa Sylvaris, Elena se tornou protetora implacável dos filhos. Nunca hesitou em intervir para preservar a segurança deles, fosse contra pressões políticas de Eldria ou contra ameaças que rondavam as fronteiras das florestas. Mantém sempre uma presença imponente, e sua palavra tem peso tanto no conselho de guerra quanto nos rituais familiares.\n\nHoje seu coração arde pela necessidade de unir os filhos e restaurar a força da casa após a morte de Kaelus. Move-se por duas motivações centrais: proteger o legado da família e descobrir os responsáveis pela emboscada. Para isso não hesita em recorrer à magia, à diplomacia e, quando necessário, à espada.",
+    "createdAt": "2025-09-22T05:21:10.699Z",
+    "updatedAt": "2025-09-22T05:21:10.699Z"
+  },
+  {
+    "id": "melina-duskbane",
+    "name": "Melina Duskbane",
+    "title": "Aventureira / Guerreira",
+    "description": "Apelidada 'Chama Ruiva'. Luvas gastas e botas manchadas de lama e cinzas. Cabelos ruivos em trança; olhos verdes.",
+    "slug": "melina-duskbane",
+    "imageUrl": null,
+    "role": "protagonist"
+  },
+  {
+    "id": "kaelus-rhys-sylvaris",
+    "name": "Kaelus Rhys Sylvaris",
+    "title": "Herança de Calonia",
+    "description": "Nascido no Reino de Calonia, Kaelus era a joia preciosa da Casa Sylvaris, sensível à mana e fascinado por artefatos antigos.",
+    "slug": "kaelus-rhys-sylvaris",
+    "imageUrl": null,
+    "role": "supporting",
+    "story": "Kaelus Rhys Sylvaris nasceu no Reino de Calonia, em Luminah, como o mais jovem da prestigiosa Casa Sylvaris. Desde cedo demonstrou uma sensibilidade mágica rara, capaz de perceber vestígios de mana onde outros viam apenas silêncio. Era chamado pela família de a joia preciosa, tanto por sua bondade quanto por seu talento incomum. Enquanto seus irmãos treinavam para a guerra ou para a política, Kaelus preferia os estudos mágicos e os artefatos antigos, fascinado pelo que podiam revelar sobre a essência do mundo.\n\nApesar de seu potencial, nunca se deixou corromper pelo orgulho. Era curioso, intuitivo e bondoso, qualities que lhe garantiam respeito não apenas dentro da família, mas também entre tutores e aprendizes que cruzavam seu caminho. Seu maior desejo era compreender a verdadeira natureza da mana e encontrar uma forma de proteger sua casa de ameaças políticas e mágicas que cresciam ao redor.\n\nAos dezoito anos sua vida foi interrompida de forma brutal. Uma emboscada nas florestas de Calonia ceifou seu futuro, alvo escolhido justamente por suas habilidades raras. O corpo nunca foi encontrado pela família, pois naquele instante o destino já o havia transformado em receptáculo para a alma de Aslam Radianthe. Hoje, sua lembrança ainda pesa sobre a Casa Sylvaris, que busca respostas para a tragédia.",
+    "createdAt": "2025-09-22T05:21:10.574Z",
+    "updatedAt": "2025-09-22T05:21:10.574Z"
+  },
+  {
+    "id": "kellen-aurelio",
+    "name": "Kellen Aurelio",
+    "title": "Guerreiro / Líder de grupo",
+    "description": "Alto e musculoso, veterano de batalhas; líder nato. Marca-se por sua proteção aos companheiros.",
+    "slug": "kellen-aurelio",
+    "imageUrl": null,
+    "role": "supporting"
+  },
+  {
     "id": "fb45f7da-31e3-44cb-a95f-1f0888ff0c05",
     "name": "Lyssandra",
     "title": "Lyssandra",
@@ -18,5 +60,61 @@
     "role": "protagonist",
     "createdAt": "2025-09-02T16:12:43.483Z",
     "updatedAt": "2025-09-02T16:22:33.279Z"
+  },
+  {
+    "id": "testador-silvano",
+    "name": "Testador Silvano",
+    "title": "Personagem de Teste",
+    "description": "Personagem criado automaticamente para testes. Aparência média, humor brincalhão.",
+    "slug": "testador-silvano",
+    "imageUrl": "/uploads/nOVOCOVER-poster.jpg",
+    "role": "protagonist",
+    "createdAt": "2025-09-13T00:00:00.000Z",
+    "updatedAt": "2025-09-13T00:00:00.000Z"
+  },
+  {
+    "id": "aslam-radianthe",
+    "name": "Aslam Radianthe",
+    "title": "O Primeiro Mestre da Mana",
+    "description": "Primeiro mestre da magia humana, conhecido por criar os Anéis de Conexão e por sua missão de reatar a humanidade à mana.",
+    "slug": "aslam-radianthe",
+    "imageUrl": null,
+    "role": "protagonist",
+    "createdAt": "2025-09-22T05:10:23.476Z",
+    "updatedAt": "2025-09-22T05:10:23.476Z",
+    "story": "Aslam Radianthe nasceu no continente de Luminah, em uma aldeia simples cercada por rios e florestas. Diferente de todas as crianças ao seu redor, veio ao mundo em silêncio, observando o ambiente como se já compreendesse algo invisível aos olhos humanos. Desde o início a mana, essência que permeia toda a criação, respondeu à sua presença de forma única. Árvores mortas floresciam com um toque, o vento se curvava ao seu redor e até as chuvas pareciam respeitar seus passos.\n\nDurante a infância, enquanto outras crianças brincavam sem preocupações, Aslam contemplava o céu e os rios. Seus pais, lavradores humildes, viam nele um mistério, mas escolheram não interferir em seu destino. Aos sete anos trouxe vida a um tronco seco apenas com o toque e, a partir desse evento, iniciou sozinho sua jornada de descobertas.\n\nNa juventude dominava os elementos básicos da natureza e aos dezesseis já era capaz de controlar água, terra e vento. Sua fama se espalhou quando conteve uma tempestade colossal que ameaçava destruir sua aldeia. Reis e senhores enviaram emissários oferecendo riquezas, terras e poder em troca de sua lealdade, mas Aslam recusou a todos. O que buscava não era dominação, mas compreensão.\n\nSua jornada o levou muito além das fronteiras humanas. Nos desertos escaldantes de Karang-Thûl em Ferros ergueu um oásis que floresceu em meio à morte. Nas ilhas de Aquarius aprendeu com sereias segredos ocultos das marés. Em Silvanum, os elfos compartilharam antigos ensinamentos, e nas montanhas dracônicas encontrou criaturas tão antigas quanto o mundo, que viam nele tanto promessa quanto ameaça.\n\nFoi então que entendeu sua verdadeira missão. Não deveria apenas usar a mana para si, mas ensinar os humanos a se reconectarem com ela. Criou os Anéis de Conexão como guia, abrindo caminho para que a humanidade pudesse trilhar a mesma jornada. Reis, camponeses, guerreiros e estudiosos o reconheceram como o primeiro mestre da magia humana.\n\nNo entanto, ao aprofundar-se nos segredos da mana descobriu que os humanos eram limitados não por natureza, mas por um selamento imposto por forças primordiais. Determinado a libertar sua espécie, confrontou uma entidade tão antiga quanto o próprio cosmos. A batalha devastou terras e céus e terminou com sua derrota. Aslam foi aprisionado em um vazio fora do tempo e do espaço.\n\nMil anos se passaram. Seu nome esmaeceu até se tornar mito. No entanto, o destino ainda o aguardava. Selado em trevas, resistiu até despertar em um novo corpo, o do jovem nobre Kaelus Rhys Sylvaris, da Casa Sylvaris em Calonia. Assim voltou ao mundo, renascido e ao mesmo tempo estrangeiro em sua própria terra.\n\nAslam carrega uma essência marcada pela compaixão e pela solidão de quem já foi diferente de todos. Apesar do imenso poder, fala com suavidade e prefere ensinar em vez de dominar. Hoje reconstrói seu caminho a partir do início, equilibrando a sabedoria milenar de sua vida passada com o fardo de viver a vida de outro. Seu propósito permanece inabalável: ensinar, proteger e libertar a humanidade do selo que a aprisiona."
+  },
+  {
+    "id": "lorde-aldrich-sylvaris",
+    "slug": "lorde-aldrich-sylvaris",
+    "name": "Lorde Aldrich Sylvaris",
+    "title": "Cabeça da Casa Sylvaris",
+    "description": "Comandante austero e pragmático, Aldrich busca a verdade sobre a emboscada que tirou Kaelus.",
+    "story": "Lorde Aldrich nasceu em Calonia, herdeiro direto da tradição militar da Casa Sylvaris. Sua pele marcada e sua postura severa revelam anos de combate e disciplina. Desde jovem liderou tropas contra invasões menores nas fronteiras de Luminah e ganhou fama como comandante respeitado e pragmático.\n\nAo assumir a posição de cabeça da casa, Aldrich dedicou-se a fortalecer alianças políticas e militares, buscando manter o equilíbrio entre as pressões da corte de Eldria e os interesses da família. Apesar da aparência austera, é profundamente ligado aos filhos, exigindo deles excelência, mas também guardando preocupação silenciosa com o bem-estar de cada um.\n\nApós a morte de Kaelus, Aldrich tornou-se ainda mais desconfiado de nobres rivais e intensificou o treinamento dos herdeiros. Seu objetivo é claro: descobrir a verdade por trás da emboscada e garantir que nenhum outro filho seja perdido para as sombras da política ou da magia.",
+    "role": "supporting",
+    "createdAt": "2025-09-22T05:21:10.810Z",
+    "updatedAt": "2025-09-22T05:21:10.810Z"
+  },
+  {
+    "id": "marcus-sylvaris",
+    "slug": "marcus-sylvaris",
+    "name": "Marcus Sylvaris",
+    "title": "Primogênito Guerreiro",
+    "description": "Comandante em campo, Marcus evita intrigas e treina em segredo para vingar a perda do irmão.",
+    "story": "Marcus, o primogênito da Casa Sylvaris, nasceu destinado a carregar o peso da espada e da liderança militar. Cresceu entre treinamentos rigorosos e campanhas reais, tornando-se comandante das forças familiares. Sua presença em campo inspira confiança, e suas cicatrizes são prova de batalhas duras vencidas em nome de Calonia.\n\nAo contrário de alguns irmãos, Marcus não aprecia os jogos da corte. Prefere a clareza do combate direto à ambiguidade das intrigas políticas. Ainda assim, sabe que o futuro da casa depende tanto de alianças quanto de vitórias militares. A relação com Cordelia, sua co-herdeira, é marcada por atritos devido às diferentes visões de liderança, mas o laço de sangue prevalece.\n\nDesde a morte de Kaelus, Marcus carrega a culpa de não ter protegido o irmão mais novo. Esse peso o move a investigar incansavelmente os responsáveis pela emboscada. Treina em segredo com guerreiros élficos para ampliar suas técnicas, buscando preparar-se para o momento em que terá de enfrentar os verdadeiros inimigos de sua família.",
+    "role": "supporting",
+    "createdAt": "2025-09-22T05:21:10.925Z",
+    "updatedAt": "2025-09-22T05:21:10.925Z"
+  },
+  {
+    "id": "evelyn-sylvaris",
+    "slug": "evelyn-sylvaris",
+    "name": "Evelyn Sylvaris",
+    "title": "Encantadora da Corte",
+    "description": "Maga de encantamentos e ilusões, Evelyn guarda um artefato ligado à morte de Kaelus.",
+    "story": "Evelyn cresceu cercada pelo luxo da corte e pela pressão de representar a Casa Sylvaris nos eventos diplomáticos de Luminah. Desde jovem mostrou afinidade com encantamentos e ilusões, tornando-se uma das encantadoras mais promissoras de sua geração. Sua beleza e inteligência abriram portas, mas Evelyn jamais se contentou em ser apenas uma peça decorativa nas festas da nobreza.\n\nPor trás de seus vestidos brilhantes e anéis mágicos pulsa um coração fogoso, determinado a proteger sua família. Treina secretamente com magos de batalha élficos e mantém em segredo um artefato amaldiçoado ligado à morte de Kaelus, guardando a esperança de um dia revelar publicamente os culpados.\n\nSeu maior desejo é dominar magia ofensiva suficiente para defender aqueles que ama e restaurar a honra da Casa Sylvaris. Apesar de sua língua afiada e da impaciência que a caracterizam, Evelyn é movida por lealdade e paixão, qualidades que a tornam peça fundamental no destino da família.",
+    "role": "supporting",
+    "createdAt": "2025-09-22T05:21:11.044Z",
+    "updatedAt": "2025-09-22T05:21:11.044Z"
   }
 ]

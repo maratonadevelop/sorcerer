@@ -1,35 +1,28 @@
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
-import { Menu, X, Globe, Settings, LogOut, LogIn } from "lucide-react";
+import { Menu, X, Settings, LogOut, LogIn, User as UserIcon, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
+import { authHeaders } from "@/lib/authHeaders";
 
 export default function Navigation() {
   const [location, setLocation] = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [isDevLocal, setIsDevLocal] = useState(false);
   const { t } = useLanguage();
-  const { user, isAuthenticated, isAdmin } = useAuth();
+  const { user, isAuthenticated, isAdmin, isLoading } = useAuth();
+  const queryClient = useQueryClient();
 
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      setIsDevLocal(localStorage.getItem('devAdmin') === 'true');
-    }
-  }, []);
+  // Dev mode UI removed – only the primary Entrar button remains.
   
   const navigationItems = [
     { name: t.home, href: "/" },
     { name: t.chapters, href: "/chapters" },
     { name: t.characters, href: "/characters" },
-    { name: t.world, href: "/world" },
+    { name: t.world, href: "/mundo" },
     { name: t.codex, href: "/codex" },
     { name: t.blog, href: "/blog" },
   ];
@@ -82,11 +75,12 @@ export default function Navigation() {
                     }`}
                     aria-current={location === item.href ? 'page' : undefined}
                     data-active={location === item.href ? 'true' : 'false'}
-                    onClick={() => {
+                    onClick={async () => {
                       // Debug log and SPA navigation; fallback to hard reload if it doesn't change the path
                       try {
                         // eslint-disable-next-line no-console
                         console.debug('[nav] click', item.href, 'current', location);
+                        try { await queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] }); } catch(e) {}
                         setLocation(item.href);
                         setTimeout(() => {
                           try {
@@ -130,85 +124,66 @@ export default function Navigation() {
               
               {/* Single-language app: Portuguese only. Language selector removed. */}
 
-              {/* Dev-mode quick entry (useful for Simple Browser which may not persist session cookies) */}
-              {!isDevLocal && (
-                <button
-                  type="button"
-                  className="ml-4 px-3 py-1 rounded-md text-sm font-medium border border-border text-foreground hover:bg-muted btn-font"
-                  onClick={() => {
-                    try { localStorage.setItem('devAdmin', 'true'); } catch (e) {}
-                    window.location.reload();
-                  }}
-                  data-testid="button-enter-dev"
-                >
-                  Entrar modo dev
-                </button>
-              )}
-              
               {/* Authentication */}
-              {isAuthenticated ? (
+              {isLoading ? (
+                <div className="h-8 w-24 animate-pulse rounded bg-muted" aria-hidden />
+              ) : isAuthenticated ? (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button 
-                      variant="ghost" 
+                    <Button
+                      variant="ghost"
                       size="sm"
-                      className="text-foreground hover:text-primary transition-colors"
+                      className="text-foreground hover:text-primary transition-colors flex items-center gap-2"
                       data-testid="button-user-menu"
                     >
-                      {user?.firstName || user?.email || 'Usuário'}
+                      <Avatar className="h-6 w-6">
+                        <AvatarImage src={(user as any)?.profileImageUrl || ''} alt={user?.firstName || user?.email || 'User'} />
+                        <AvatarFallback className="text-xs">
+                          {(user?.firstName || user?.email || 'U')?.slice(0,2).toUpperCase()}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span>{user?.firstName || user?.email || 'Usuário'}</span>
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {isDevLocal && (
+                    <DropdownMenuItem asChild>
+                      <Link href="/settings" className="cursor-pointer w-full">
+                        <UserIcon className="h-4 w-4 mr-2" />
+                        Configurações
+                      </Link>
+                    </DropdownMenuItem>
+                    {isAdmin && (
                       <>
-                        <DropdownMenuItem onSelect={() => {
-                          try { localStorage.removeItem('devAdmin'); setIsDevLocal(false); } catch(e) {}
-                          window.location.reload();
-                        }}>
-                          Sair do modo dev
+                        <DropdownMenuItem asChild>
+                          <Link href="/admin" className="cursor-pointer w-full">
+                            <Settings className="h-4 w-4 mr-2" />
+                            Admin Panel
+                          </Link>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                       </>
                     )}
-                          {isAdmin && (
-                            <>
-                              <DropdownMenuItem asChild>
-                                <Link href="/admin" className="cursor-pointer w-full">
-                                  <Settings className="h-4 w-4 mr-2" />
-                                  Admin Panel
-                                </Link>
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                            </>
-                          )}
-                    <DropdownMenuItem asChild>
-                      <a href="/api/logout" className="cursor-pointer w-full">
+                    <DropdownMenuItem onSelect={async () => {
+                      try { await fetch('/api/logout', { method: 'POST', credentials: 'include', headers: authHeaders() }); } catch {}
+                      try { localStorage.removeItem('devToken'); } catch (e) {}
+                      try { await queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] }); } catch (e) {}
+                      window.location.reload();
+                    }}>
+                      <div className="cursor-pointer w-full">
                         <LogOut className="h-4 w-4 mr-2" />
                         Sair
-                      </a>
+                      </div>
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : (
-                <Button asChild variant="ghost" size="sm">
+                <Button asChild variant="default" size="sm">
                   <a
-                    href="/api/login"
+                    href="/login"
                     data-testid="button-login"
-                    onClick={async (e) => {
-                      // Prevent SPA router interception
+                    onClick={(e) => {
                       e.preventDefault();
-                      try {
-                        // Try development helper first
-                        const resp = await fetch('/api/dev/login', { method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ id: 'dev-admin', isAdmin: true }) });
-                        if (resp.ok) {
-                          window.location.reload();
-                          return;
-                        }
-                      } catch (err) {
-                        // ignore and fallback to server login
-                      }
-                      // Fallback to server OIDC login
-                      window.location.href = '/api/login';
+                      setLocation('/login');
                     }}
                     className="btn-gold btn-font px-3 py-1 rounded-md"
                   >
@@ -225,6 +200,19 @@ export default function Navigation() {
             <div className="hidden md:flex items-center" aria-hidden>
               <span className="text-lg">🇧🇷</span>
             </div>
+
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="md:hidden text-foreground hover:text-primary"
+                aria-label="Admin"
+                onClick={() => setLocation('/admin')}
+                data-testid="button-mobile-admin"
+              >
+                <Settings className="h-5 w-5" />
+              </Button>
+            )}
 
             <Button
               variant="ghost"
@@ -290,25 +278,15 @@ export default function Navigation() {
                   <div className="px-3 py-2 text-sm text-muted-foreground">
                     {user?.firstName || user?.email || 'Usuário'}
                   </div>
-                  {isDevLocal && (
-                    <a
-                      onClick={() => { try { localStorage.removeItem('devAdmin'); } catch(e) {} ; window.location.reload(); }}
-                      className="nav-link flex items-center px-3 py-2 rounded-md font-medium transition-colors text-foreground hover:text-primary hover:bg-muted cursor-pointer"
-                    >
-                      Sair do modo dev
-                    </a>
-                  )}
-                  {!isDevLocal && (
-                    <a
-                      onClick={() => { try { localStorage.setItem('devAdmin','true'); } catch(e) {} ; window.location.reload(); }}
-                      className="flex items-center px-3 py-2 rounded-md font-medium transition-colors text-foreground hover:text-primary hover:bg-muted cursor-pointer"
-                    >
-                      Entrar modo dev
-                    </a>
-                  )}
                   <a
-                    href="/api/logout"
-                    className="nav-link flex items-center px-3 py-2 rounded-md font-medium transition-colors text-foreground hover:text-primary hover:bg-muted"
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      try { await fetch('/api/logout', { method: 'POST', credentials: 'include', headers: authHeaders() }); } catch (err) {}
+                      try { localStorage.removeItem('devToken'); } catch (e) {}
+                      try { await queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] }); } catch (e) {}
+                      window.location.reload();
+                    }}
+                    className="nav-link flex items-center px-3 py-2 rounded-md font-medium transition-colors text-foreground hover:text-primary hover:bg-muted cursor-pointer"
                     data-testid="mobile-button-logout"
                   >
                     <LogOut className="h-4 w-4 mr-2" />
@@ -317,17 +295,10 @@ export default function Navigation() {
                 </>
               ) : (
                 <a
-                  href="/api/login"
+                  href="/login"
                   className="flex items-center px-3 py-2 rounded-md font-medium transition-colors text-foreground hover:text-primary hover:bg-muted"
                   data-testid="mobile-button-login"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    try {
-                      const resp = await fetch('/api/dev/login', { method: 'POST', headers: { 'content-type':'application/json' }, body: JSON.stringify({ id: 'dev-admin', isAdmin: true }) });
-                      if (resp.ok) { window.location.reload(); return; }
-                    } catch (err) {}
-                    window.location.href = '/api/login';
-                  }}
+                  onClick={(e) => { e.preventDefault(); setLocation('/login'); }}
                 >
                   <LogIn className="h-4 w-4 mr-2" />
                   Entrar

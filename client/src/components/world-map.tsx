@@ -30,7 +30,7 @@ export default function WorldMap({ locations }: WorldMapProps) {
   return (
     <Card className="bg-card border border-border rounded-xl overflow-hidden">
       <div className="relative">
-        <ParallaxLayer depth={0.3} className="map-bg min-h-[480px]">
+        <ParallaxLayer depth={0.3} className="map-bg min-h-[640px] lg:min-h-[720px]">
           <InteractiveWorldMap />
         </ParallaxLayer>
 

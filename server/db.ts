@@ -1,30 +1,43 @@
-﻿import * as schema from "@shared/schema";
+﻿import './env';
+import * as schema from "@shared/schema";
 import { randomUUID } from 'crypto';
-import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
 import Database from 'better-sqlite3';
+import postgres from 'postgres';
+import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 
-// Ensure DATABASE_URL is set, default to local sqlite file
-const dbUrl = process.env.DATABASE_URL || 'file:./dev.sqlite';
-console.log(`Using database at: ${dbUrl}`);
+// env helpers
+const env = (k: string, d?: string) => process.env[k] ?? d ?? '';
 
-// Initialize the database connection.
-// The 'file:' prefix is not needed for the better-sqlite3 constructor.
-const sqliteDb = new Database(dbUrl.replace('file:', ''));
+// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite
+const baseWriteUrl = env('DATABASE_URL_WRITE', env('DATABASE_URL', 'file:./dev.sqlite'));
+const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
-// Add a custom function to the SQLite instance for UUID generation to maintain
-// compatibility with schemas that might expect it (e.g., from Postgres).
-try {
-  sqliteDb.function('gen_random_uuid', () => randomUUID());
-} catch (e) {
-  // Function might already exist, ignore the error.
-  console.warn('Could not register gen_random_uuid function:', e);
-}
+const maskDbUrl = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return url.replace(/:\/\/.*@/, '://****@');
+  }
+};
 
-/**
- * Ensures that the necessary tables exist in the SQLite database for local development.
- * This prevents errors when the application starts up for the first time.
- * @param dbInst - The better-sqlite3 database instance.
- */
+const ensureParams = (u: string, extra: Record<string, string>) => {
+  try {
+    const url = new URL(u);
+    Object.entries(extra).forEach(([k, v]) => {
+      if (!url.searchParams.has(k)) url.searchParams.set(k, v);
+    });
+    return url.toString();
+  } catch {
+    return u;
+  }
+};
+
+// Helper: detect sqlite vs postgres (based on write URL)
+const isSqlite = baseWriteUrl.startsWith('file:') || baseWriteUrl.includes('sqlite');
+
+// Shared SQLite schema bootstrap (kept for local dev)
 const ensureSqliteSchema = (dbInst: any) => {
   const stmts = [
     `CREATE TABLE IF NOT EXISTS chapters (
@@ -34,6 +47,8 @@ const ensureSqliteSchema = (dbInst: any) => {
       content TEXT NOT NULL,
       excerpt TEXT NOT NULL,
       chapter_number INTEGER NOT NULL,
+      arc_number INTEGER,
+      arc_title TEXT,
       reading_time INTEGER NOT NULL,
       published_at TEXT NOT NULL,
       image_url TEXT
@@ -52,6 +67,10 @@ const ensureSqliteSchema = (dbInst: any) => {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       description TEXT NOT NULL,
+      details TEXT,
+      image_url TEXT,
+      slug TEXT,
+      tags TEXT,
       map_x INTEGER NOT NULL,
       map_y INTEGER NOT NULL,
       type TEXT NOT NULL
@@ -80,6 +99,30 @@ const ensureSqliteSchema = (dbInst: any) => {
       progress INTEGER NOT NULL DEFAULT 0,
       last_read_at TEXT NOT NULL
     );`,
+    `CREATE TABLE IF NOT EXISTS audio_tracks (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      file_url TEXT NOT NULL,
+      loop INTEGER NOT NULL DEFAULT 1,
+      volume_default INTEGER NOT NULL DEFAULT 70,
+      fade_in_ms INTEGER,
+      fade_out_ms INTEGER,
+      created_at TEXT,
+      updated_at TEXT
+    );`,
+    `CREATE TABLE IF NOT EXISTS audio_assignments (
+      id TEXT PRIMARY KEY,
+      track_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      priority INTEGER NOT NULL DEFAULT 1,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT,
+      updated_at TEXT
+    );`,
+  // Performance: index to speed up resolveAudio filtering
+  `CREATE INDEX IF NOT EXISTS idx_audio_assign_specific ON audio_assignments(entity_type, entity_id, active, priority);`,
     `CREATE TABLE IF NOT EXISTS sessions (
       sid TEXT PRIMARY KEY,
       sess TEXT NOT NULL,
@@ -95,6 +138,11 @@ const ensureSqliteSchema = (dbInst: any) => {
       created_at TEXT,
       updated_at TEXT
     );`,
+    `CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      updated_at TEXT
+    );`,
   ];
 
   // Execute schema creation statements safely.
@@ -106,44 +154,332 @@ const ensureSqliteSchema = (dbInst: any) => {
   console.log('SQLite schema verified.');
 };
 
-// Run the schema setup.
-try {
-  ensureSqliteSchema(sqliteDb);
-} catch (e) {
-  console.error('Fatal: Failed to ensure SQLite schema:', e);
-  process.exit(1); // Exit if the database can't be prepared.
-}
+// Exports: db (Drizzle instance) and pool (raw connection object)
+let db: any;
+let pool: any;
 
-// Ensure existing databases get the new 'story' column on characters table.
-try {
-  const cols = sqliteDb.prepare("PRAGMA table_info('characters');").all();
-  const hasStory = cols.some((c: any) => c.name === 'story');
-  if (!hasStory) {
-    console.log("Adding missing 'story' column to characters table");
+// health/circuit state (Postgres path)
+let failStreak = 0;
+let circuitOpenUntil = 0;
+const maxFails = parseInt(env('DB_HEALTH_FAILS_TO_TRIP', '3'), 10);
+const openMs = parseInt(env('DB_HEALTH_OPEN_AFTER_MS', '15000'), 10);
+
+// Simple retry with exponential backoff for transient errors
+async function withRetry<T>(fn: () => Promise<T>, tries = 2, baseDelayMs = 120): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < tries; i++) {
     try {
-      sqliteDb.prepare("ALTER TABLE characters ADD COLUMN story TEXT;").run();
-    } catch (e) {
-      console.warn("Could not add 'story' column to characters table:", e);
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const transient = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED'].includes(err?.code) || /timeout/i.test(err?.message ?? '');
+      if (!transient || i === tries - 1) break;
+      await new Promise(r => setTimeout(r, baseDelayMs * Math.pow(2, i)));
     }
   }
-  const hasSlug = cols.some((c: any) => c.name === 'slug');
-  if (!hasSlug) {
-    console.log("Adding missing 'slug' column to characters table");
-    try {
-      // Add slug column (nullable for existing rows). We'll create a unique index so future slugs are unique.
-      sqliteDb.prepare("ALTER TABLE characters ADD COLUMN slug TEXT;").run();
-      // Create a unique index for slug to enforce uniqueness for non-null values
-      sqliteDb.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_slug ON characters(slug);").run();
-    } catch (e) {
-      console.warn("Could not add 'slug' column to characters table:", e);
-    }
-  }
-} catch (e) {
-  console.warn('Could not verify/alter characters table schema:', e);
+  throw lastErr;
 }
 
-// Export the Drizzle instance and the raw connection pool (the sqliteDb object).
-export const db = drizzle(sqliteDb, { schema });
-export const pool = sqliteDb;
+if (isSqlite) {
+  // Initialize SQLite connection for local dev
+  const sqliteDb = new Database(baseWriteUrl.replace('file:', ''));
+
+  // Add a custom function to the SQLite instance for UUID generation to maintain
+  // compatibility with schemas that might expect it (e.g., from Postgres).
+  try {
+    sqliteDb.function('gen_random_uuid', () => randomUUID());
+  } catch (e) {
+    // Function might already exist, ignore the error.
+    console.warn('Could not register gen_random_uuid function:', e);
+  }
+
+  // Run the schema setup for local dev
+  try {
+    ensureSqliteSchema(sqliteDb);
+  } catch (e) {
+    console.error('Fatal: Failed to ensure SQLite schema:', e);
+    process.exit(1);
+  }
+
+  // Ensure existing databases get the new columns (kept for compatibility)
+  try {
+    const cols = sqliteDb.prepare("PRAGMA table_info('characters');").all();
+    const hasStory = cols.some((c: any) => c.name === 'story');
+    if (!hasStory) {
+      console.log("Adding missing 'story' column to characters table");
+      try {
+        sqliteDb.prepare("ALTER TABLE characters ADD COLUMN story TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'story' column to characters table:", e);
+      }
+    }
+    const hasSlug = cols.some((c: any) => c.name === 'slug');
+    if (!hasSlug) {
+      console.log("Adding missing 'slug' column to characters table");
+      try {
+        sqliteDb.prepare("ALTER TABLE characters ADD COLUMN slug TEXT;").run();
+        sqliteDb.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_characters_slug ON characters(slug);").run();
+      } catch (e) {
+        console.warn("Could not add 'slug' column to characters table:", e);
+      }
+    }
+    // Ensure existing chapters table has arc fields
+    const chapterCols = sqliteDb.prepare("PRAGMA table_info('chapters');").all();
+    const hasArcNumber = chapterCols.some((c: any) => c.name === 'arc_number');
+    if (!hasArcNumber) {
+      try {
+        console.log("Adding missing 'arc_number' column to chapters table");
+        sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN arc_number INTEGER;").run();
+      } catch (e) {
+        console.warn("Could not add 'arc_number' column to chapters table:", e);
+      }
+    }
+    const hasArcTitle = chapterCols.some((c: any) => c.name === 'arc_title');
+    if (!hasArcTitle) {
+      try {
+        console.log("Adding missing 'arc_title' column to chapters table");
+        sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN arc_title TEXT;").run();
+      } catch (e) {
+        console.warn("Could not add 'arc_title' column to chapters table:", e);
+      }
+    }
+    // Ensure locations table has image_url and details columns (idempotent)
+    try {
+      const locCols = sqliteDb.prepare("PRAGMA table_info('locations');").all();
+      const hasImage = locCols.some((c: any) => c.name === 'image_url');
+      if (!hasImage) {
+        console.log("Adding missing 'image_url' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN image_url TEXT;").run(); } catch (e) { console.warn("Could not add 'image_url' column to locations table:", e); }
+      }
+      const hasDetails = locCols.some((c: any) => c.name === 'details');
+      if (!hasDetails) {
+        console.log("Adding missing 'details' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN details TEXT;").run(); } catch (e) { console.warn("Could not add 'details' column to locations table:", e); }
+      }
+      const hasSlug = locCols.some((c: any) => c.name === 'slug');
+      if (!hasSlug) {
+        console.log("Adding missing 'slug' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN slug TEXT;").run(); } catch (e) { console.warn("Could not add 'slug' column to locations table:", e); }
+      }
+      const hasTags = locCols.some((c: any) => c.name === 'tags');
+      if (!hasTags) {
+        console.log("Adding missing 'tags' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN tags TEXT;").run(); } catch (e) { console.warn("Could not add 'tags' column to locations table:", e); }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter locations table schema:', e);
+    }
+  } catch (e) {
+    console.warn('Could not verify/alter characters table schema:', e);
+  }
+
+  db = drizzleSqlite(sqliteDb, { schema });
+  pool = sqliteDb;
+} else {
+  // Postgres (Supabase) connection via postgres-js
+  // Normalize URLs with pgBouncer and TLS parameters
+  // Use pooler by host:port only (e.g., 6543 on Supabase). Do not add unknown params like 'pgbouncer'.
+  const writeUrl = ensureParams(baseWriteUrl, { sslmode: 'require' });
+  const readUrl = ensureParams(baseReadUrl, { sslmode: 'require' });
+
+  const sqlWrite = postgres(writeUrl, {
+    ssl: { rejectUnauthorized: env('DB_SSL_STRICT', 'false') === 'true' },
+    max: parseInt(env('DB_POOL_MAX', '10'), 10),
+    idle_timeout: parseInt(env('DB_IDLE_TIMEOUT_MS', '30000'), 10),
+    // Silence benign Postgres NOTICE messages like "relation already exists"
+    onnotice: () => {},
+    keep_alive: 1,
+  });
+  const sqlRead = postgres(readUrl, {
+    ssl: { rejectUnauthorized: env('DB_SSL_STRICT', 'false') === 'true' },
+    max: Math.max(2, Math.floor(parseInt(env('DB_POOL_MAX', '10'), 10) / 2)),
+    idle_timeout: parseInt(env('DB_IDLE_TIMEOUT_MS', '30000'), 10),
+    onnotice: () => {},
+    keep_alive: 1,
+  });
+
+  // drizzle-orm/postgres-js expects the writer client instance
+  db = drizzlePostgres(sqlWrite, { schema });
+  pool = sqlWrite;
+
+  // Ensure core schema exists in Postgres (idempotent)
+  const ensurePostgresSchema = async () => {
+    try {
+      // Use TEXT ids to match SQLite shape and avoid uuid extension requirements.
+      await sqlWrite`CREATE TABLE IF NOT EXISTS chapters (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        content TEXT NOT NULL,
+        excerpt TEXT NOT NULL,
+        chapter_number INTEGER NOT NULL,
+        arc_number INTEGER,
+        arc_title TEXT,
+        reading_time INTEGER NOT NULL,
+        published_at TEXT NOT NULL,
+        image_url TEXT
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS characters (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        title TEXT,
+        description TEXT,
+        story TEXT,
+        slug TEXT NOT NULL UNIQUE,
+        image_url TEXT,
+        role TEXT NOT NULL
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS locations (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL,
+        details TEXT,
+        image_url TEXT,
+        slug TEXT,
+        tags TEXT,
+        map_x INTEGER NOT NULL,
+        map_y INTEGER NOT NULL,
+        type TEXT NOT NULL
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS codex_entries (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        content TEXT,
+        category TEXT NOT NULL,
+        image_url TEXT
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS blog_posts (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        slug TEXT NOT NULL UNIQUE,
+        content TEXT NOT NULL,
+        excerpt TEXT NOT NULL,
+        category TEXT NOT NULL,
+        published_at TEXT NOT NULL,
+        image_url TEXT
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS reading_progress (
+        id TEXT PRIMARY KEY,
+        chapter_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        progress INTEGER NOT NULL DEFAULT 0,
+        last_read_at TEXT NOT NULL
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS audio_tracks (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        loop INTEGER NOT NULL DEFAULT 1,
+        volume_default INTEGER NOT NULL DEFAULT 70,
+        fade_in_ms INTEGER,
+        fade_out_ms INTEGER,
+        created_at TEXT,
+        updated_at TEXT
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS audio_assignments (
+        id TEXT PRIMARY KEY,
+        track_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT,
+        priority INTEGER NOT NULL DEFAULT 1,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT,
+        updated_at TEXT
+      )`;
+      await sqlWrite`CREATE INDEX IF NOT EXISTS idx_audio_assign_specific ON audio_assignments(entity_type, entity_id, active, priority)`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS sessions (
+        sid TEXT PRIMARY KEY,
+        sess TEXT NOT NULL,
+        expire TEXT NOT NULL
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        email TEXT UNIQUE,
+        first_name TEXT,
+        last_name TEXT,
+        profile_image_url TEXT,
+        password_hash TEXT,
+        is_admin INTEGER DEFAULT 0,
+        created_at TEXT,
+        updated_at TEXT
+      )`;
+      await sqlWrite`CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT,
+        updated_at TEXT
+      )`;
+    } catch (e) {
+      console.warn('Failed to ensure Postgres schema (will continue):', e);
+    }
+  };
+
+  // Exported init to apply session-level settings and log targets
+  async function initPostgres() {
+    // Session timeouts (statement and idle in xact)
+    const stmtMs = parseInt(env('DB_STMT_TIMEOUT_MS', '15000'), 10);
+    const idleTxMs = parseInt(env('DB_IDLE_TX_TIMEOUT_MS', '15000'), 10);
+    try {
+      await withRetry(async () => {
+        // Note: SET does not accept parameters; embed validated integers directly
+        await sqlWrite.unsafe(`set statement_timeout = ${Math.max(0, Number.isFinite(stmtMs) ? stmtMs : 15000)}`);
+        await sqlWrite.unsafe(`set idle_in_transaction_session_timeout = ${Math.max(0, Number.isFinite(idleTxMs) ? idleTxMs : 15000)}`);
+        await sqlWrite.unsafe(`set lock_timeout = 5000`);
+      });
+    } catch (e) {
+      console.warn('Could not apply session timeouts (v2):', (e as any)?.message || e);
+    }
+
+    await ensurePostgresSchema();
+
+    /* eslint-disable no-console */
+    console.log(`Using database (write): ${maskDbUrl(writeUrl)}`);
+    if (readUrl !== writeUrl) console.log(`Using database (read) : ${maskDbUrl(readUrl)}`);
+    console.log('Connected to Postgres (Supabase)');
+    /* eslint-enable no-console */
+  }
+
+  // Attach helpers on pool for ping operations
+  (pool as any)._sqlRead = sqlRead;
+
+  // Provide exported init for index.ts
+  (pool as any)._init = initPostgres;
+}
+
+// Health helpers for /ready
+export async function dbReadyPing(): Promise<boolean> {
+  try {
+    if (isSqlite) return true;
+    const read = (pool as any)?._sqlRead || pool;
+    await withRetry(() => read`select 1`, 2);
+    failStreak = 0;
+    return true;
+  } catch {
+    failStreak++;
+    if (failStreak >= maxFails) circuitOpenUntil = Date.now() + (parseInt(env('DB_HEALTH_OPEN_AFTER_MS', '15000'), 10));
+    return false;
+  }
+}
+
+export function dbCircuitOpen(): boolean {
+  return Date.now() < circuitOpenUntil;
+}
+
+export async function dbInit() {
+  if (isSqlite) {
+    console.log(`Using database (sqlite): ${maskDbUrl(baseWriteUrl)}`);
+    return;
+  }
+  if ((pool as any)?._init) {
+    await (pool as any)._init();
+  }
+}
+
+export async function dbClose() {
+  try { if (pool?.end) await pool.end(); } catch {}
+}
+
+export { db, pool };
 
 
