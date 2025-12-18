@@ -6,6 +6,10 @@ import dotenv from 'dotenv';
 // This lets us keep .env.local at the workspace root or inside the app folder.
 try {
   const cwd = process.cwd();
+  const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
+  const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
+  const allowOverride = !(isProduction || runningOnRender);
+
   // Load parent first, then current; and load .env before .env.local so .env.local overrides.
   const candidates = [
     // parent (workspace root)
@@ -17,7 +21,10 @@ try {
   ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {
-      dotenv.config({ path: p, override: true });
+      const parsed = dotenv.parse(fs.readFileSync(p));
+      for (const [k, v] of Object.entries(parsed)) {
+        if (allowOverride || process.env[k] === undefined) process.env[k] = v;
+      }
     }
   }
 } catch (e) {

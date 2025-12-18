@@ -16,7 +16,23 @@ const sqliteFallbackUrl = sqlitePath
   ? (sqlitePath.startsWith('file:') ? sqlitePath : `file:${sqlitePath}`)
   : 'file:./dev.sqlite';
 
-const baseWriteUrl = env('DATABASE_URL_WRITE', env('DATABASE_URL', sqliteFallbackUrl));
+const looksLikeDefaultDevSqlite = (u: string) => {
+  const raw = (u || '').trim();
+  if (!raw) return false;
+  const normalized = raw.replace(/^file:/, '');
+  return normalized === './dev.sqlite' || normalized === 'dev.sqlite' || normalized.endsWith('/dev.sqlite') || normalized.endsWith('\\dev.sqlite');
+};
+
+const databaseUrl = env('DATABASE_URL', '');
+const explicitWriteUrl = env('DATABASE_URL_WRITE', '');
+
+// If DB_PATH is configured and DATABASE_URL is empty or still pointing at the local default,
+// prefer DB_PATH so Render SQLite deployments don't accidentally use ./dev.sqlite.
+const inferredWriteUrl = (sqlitePath && (!databaseUrl || looksLikeDefaultDevSqlite(databaseUrl)))
+  ? sqliteFallbackUrl
+  : (databaseUrl || sqliteFallbackUrl);
+
+const baseWriteUrl = explicitWriteUrl || inferredWriteUrl;
 const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
 const maskDbUrl = (url: string) => {
@@ -49,9 +65,12 @@ const ensureSqliteSchema = (dbInst: any) => {
     `CREATE TABLE IF NOT EXISTS chapters (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      title_i18n TEXT,
       slug TEXT NOT NULL UNIQUE,
       content TEXT NOT NULL,
+      content_i18n TEXT,
       excerpt TEXT NOT NULL,
+      excerpt_i18n TEXT,
       chapter_number INTEGER NOT NULL,
       arc_number INTEGER,
       arc_title TEXT,
@@ -62,7 +81,9 @@ const ensureSqliteSchema = (dbInst: any) => {
     `CREATE TABLE IF NOT EXISTS characters (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      name_i18n TEXT,
       title TEXT NOT NULL,
+      title_i18n TEXT,
   description TEXT NOT NULL,
   story TEXT,
   slug TEXT NOT NULL UNIQUE,
@@ -72,7 +93,9 @@ const ensureSqliteSchema = (dbInst: any) => {
     `CREATE TABLE IF NOT EXISTS locations (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
+      name_i18n TEXT,
       description TEXT NOT NULL,
+      description_i18n TEXT,
       details TEXT,
       image_url TEXT,
       slug TEXT,
@@ -84,16 +107,22 @@ const ensureSqliteSchema = (dbInst: any) => {
     `CREATE TABLE IF NOT EXISTS codex_entries (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      title_i18n TEXT,
       description TEXT NOT NULL,
+      description_i18n TEXT,
+      content TEXT,
       category TEXT NOT NULL,
       image_url TEXT
     );`,
     `CREATE TABLE IF NOT EXISTS blog_posts (
       id TEXT PRIMARY KEY,
       title TEXT NOT NULL,
+      title_i18n TEXT,
       slug TEXT NOT NULL UNIQUE,
       content TEXT NOT NULL,
+      content_i18n TEXT,
       excerpt TEXT NOT NULL,
+      excerpt_i18n TEXT,
       category TEXT NOT NULL,
       published_at TEXT NOT NULL,
       image_url TEXT
@@ -112,6 +141,7 @@ const ensureSqliteSchema = (dbInst: any) => {
       file_url TEXT NOT NULL,
       loop INTEGER NOT NULL DEFAULT 1,
       volume_default INTEGER NOT NULL DEFAULT 70,
+      volume_user_max INTEGER NOT NULL DEFAULT 70,
       fade_in_ms INTEGER,
       fade_out_ms INTEGER,
       created_at TEXT,
@@ -129,10 +159,12 @@ const ensureSqliteSchema = (dbInst: any) => {
     );`,
   // Performance: index to speed up resolveAudio filtering
   `CREATE INDEX IF NOT EXISTS idx_audio_assign_specific ON audio_assignments(entity_type, entity_id, active, priority);`,
+    // Session store table: keep both legacy `expire` (Drizzle schema) and `expired` (connect-sqlite3 expects this).
     `CREATE TABLE IF NOT EXISTS sessions (
       sid TEXT PRIMARY KEY,
       sess TEXT NOT NULL,
-      expire TEXT NOT NULL
+      expire TEXT,
+      expired INTEGER
     );`,
     `CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -140,6 +172,7 @@ const ensureSqliteSchema = (dbInst: any) => {
       first_name TEXT,
       last_name TEXT,
       profile_image_url TEXT,
+      password_hash TEXT,
       is_admin INTEGER DEFAULT 0,
       created_at TEXT,
       updated_at TEXT
@@ -188,7 +221,16 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 2, baseDelayMs = 120):
 
 if (isSqlite) {
   // Initialize SQLite connection for local dev
-  const sqliteDb = new Database(baseWriteUrl.replace('file:', ''));
+  const sqliteFile = baseWriteUrl.replace(/^file:/, '');
+  // Explicit log for Render debugging: shows the effective SQLite file chosen.
+  // (No credentials involved for SQLite paths.)
+  /* eslint-disable no-console */
+  console.log(`Using database at: file:${sqliteFile}`);
+  console.log(`Using database (sqlite): ${maskDbUrl(baseWriteUrl)}`);
+  console.log(`DB_PATH is ${process.env.DB_PATH ? 'set' : 'unset'}`);
+  /* eslint-enable no-console */
+
+  const sqliteDb = new Database(sqliteFile);
 
   // Add a custom function to the SQLite instance for UUID generation to maintain
   // compatibility with schemas that might expect it (e.g., from Postgres).
@@ -252,6 +294,16 @@ if (isSqlite) {
     // Ensure locations table has image_url and details columns (idempotent)
     try {
       const locCols = sqliteDb.prepare("PRAGMA table_info('locations');").all();
+      const hasNameI18n = locCols.some((c: any) => c.name === 'name_i18n');
+      if (!hasNameI18n) {
+        console.log("Adding missing 'name_i18n' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN name_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'name_i18n' column to locations table:", e); }
+      }
+      const hasDescI18n = locCols.some((c: any) => c.name === 'description_i18n');
+      if (!hasDescI18n) {
+        console.log("Adding missing 'description_i18n' column to locations table");
+        try { sqliteDb.prepare("ALTER TABLE locations ADD COLUMN description_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'description_i18n' column to locations table:", e); }
+      }
       const hasImage = locCols.some((c: any) => c.name === 'image_url');
       if (!hasImage) {
         console.log("Adding missing 'image_url' column to locations table");
@@ -274,6 +326,109 @@ if (isSqlite) {
       }
     } catch (e) {
       console.warn('Could not verify/alter locations table schema:', e);
+    }
+
+    // Ensure i18n/content columns exist on codex_entries (required by Drizzle schema)
+    try {
+      const codexCols = sqliteDb.prepare("PRAGMA table_info('codex_entries');").all();
+      const hasTitleI18n = codexCols.some((c: any) => c.name === 'title_i18n');
+      if (!hasTitleI18n) {
+        console.log("Adding missing 'title_i18n' column to codex_entries table");
+        try { sqliteDb.prepare("ALTER TABLE codex_entries ADD COLUMN title_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'title_i18n' column to codex_entries table:", e); }
+      }
+      const hasDescriptionI18n = codexCols.some((c: any) => c.name === 'description_i18n');
+      if (!hasDescriptionI18n) {
+        console.log("Adding missing 'description_i18n' column to codex_entries table");
+        try { sqliteDb.prepare("ALTER TABLE codex_entries ADD COLUMN description_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'description_i18n' column to codex_entries table:", e); }
+      }
+      const hasContent = codexCols.some((c: any) => c.name === 'content');
+      if (!hasContent) {
+        console.log("Adding missing 'content' column to codex_entries table");
+        try { sqliteDb.prepare("ALTER TABLE codex_entries ADD COLUMN content TEXT;").run(); } catch (e) { console.warn("Could not add 'content' column to codex_entries table:", e); }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter codex_entries table schema:', e);
+    }
+
+    // Ensure i18n columns exist on chapters and blog_posts (kept in sync with Drizzle schema)
+    try {
+      const chapterCols2 = sqliteDb.prepare("PRAGMA table_info('chapters');").all();
+      const hasTitleI18n = chapterCols2.some((c: any) => c.name === 'title_i18n');
+      if (!hasTitleI18n) {
+        console.log("Adding missing 'title_i18n' column to chapters table");
+        try { sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN title_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'title_i18n' column to chapters table:", e); }
+      }
+      const hasContentI18n = chapterCols2.some((c: any) => c.name === 'content_i18n');
+      if (!hasContentI18n) {
+        console.log("Adding missing 'content_i18n' column to chapters table");
+        try { sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN content_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'content_i18n' column to chapters table:", e); }
+      }
+      const hasExcerptI18n = chapterCols2.some((c: any) => c.name === 'excerpt_i18n');
+      if (!hasExcerptI18n) {
+        console.log("Adding missing 'excerpt_i18n' column to chapters table");
+        try { sqliteDb.prepare("ALTER TABLE chapters ADD COLUMN excerpt_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'excerpt_i18n' column to chapters table:", e); }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter chapters i18n schema:', e);
+    }
+
+    try {
+      const blogCols = sqliteDb.prepare("PRAGMA table_info('blog_posts');").all();
+      const hasTitleI18n = blogCols.some((c: any) => c.name === 'title_i18n');
+      if (!hasTitleI18n) {
+        console.log("Adding missing 'title_i18n' column to blog_posts table");
+        try { sqliteDb.prepare("ALTER TABLE blog_posts ADD COLUMN title_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'title_i18n' column to blog_posts table:", e); }
+      }
+      const hasContentI18n = blogCols.some((c: any) => c.name === 'content_i18n');
+      if (!hasContentI18n) {
+        console.log("Adding missing 'content_i18n' column to blog_posts table");
+        try { sqliteDb.prepare("ALTER TABLE blog_posts ADD COLUMN content_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'content_i18n' column to blog_posts table:", e); }
+      }
+      const hasExcerptI18n = blogCols.some((c: any) => c.name === 'excerpt_i18n');
+      if (!hasExcerptI18n) {
+        console.log("Adding missing 'excerpt_i18n' column to blog_posts table");
+        try { sqliteDb.prepare("ALTER TABLE blog_posts ADD COLUMN excerpt_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'excerpt_i18n' column to blog_posts table:", e); }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter blog_posts i18n schema:', e);
+    }
+
+    // Ensure i18n columns exist on characters
+    try {
+      const charCols2 = sqliteDb.prepare("PRAGMA table_info('characters');").all();
+      const hasNameI18n = charCols2.some((c: any) => c.name === 'name_i18n');
+      if (!hasNameI18n) {
+        console.log("Adding missing 'name_i18n' column to characters table");
+        try { sqliteDb.prepare("ALTER TABLE characters ADD COLUMN name_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'name_i18n' column to characters table:", e); }
+      }
+      const hasTitleI18n = charCols2.some((c: any) => c.name === 'title_i18n');
+      if (!hasTitleI18n) {
+        console.log("Adding missing 'title_i18n' column to characters table");
+        try { sqliteDb.prepare("ALTER TABLE characters ADD COLUMN title_i18n TEXT;").run(); } catch (e) { console.warn("Could not add 'title_i18n' column to characters table:", e); }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter characters i18n schema:', e);
+    }
+
+    // Ensure sessions table has `expired` column required by connect-sqlite3
+    try {
+      const sessCols = sqliteDb.prepare("PRAGMA table_info('sessions');").all();
+      const hasExpired = sessCols.some((c: any) => c.name === 'expired');
+      if (!hasExpired) {
+        console.log("Adding missing 'expired' column to sessions table");
+        try {
+          sqliteDb.prepare("ALTER TABLE sessions ADD COLUMN expired INTEGER;").run();
+        } catch (e) {
+          console.warn("Could not add 'expired' column to sessions table:", e);
+        }
+        // Best-effort copy from legacy `expire` column if it exists
+        const hasExpire = sessCols.some((c: any) => c.name === 'expire');
+        if (hasExpire) {
+          try { sqliteDb.prepare("UPDATE sessions SET expired = COALESCE(expired, expire);").run(); } catch {}
+        }
+      }
+    } catch (e) {
+      console.warn('Could not verify/alter sessions table schema:', e);
     }
   } catch (e) {
     console.warn('Could not verify/alter characters table schema:', e);
