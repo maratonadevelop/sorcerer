@@ -40,6 +40,16 @@ const explicitWriteUrl = env('DATABASE_URL_WRITE', '');
 // On Render, ALWAYS use DATABASE_URL if it looks like Postgres
 const looksLikePostgres = (u: string) => u.startsWith('postgres://') || u.startsWith('postgresql://');
 
+// Helper to mask password in URL for logging (defined early for use in error messages)
+const maskDbUrl = (url: string) => {
+  try {
+    const u = new URL(url);
+    return `${u.protocol}//${u.host}${u.pathname}`;
+  } catch {
+    return url.replace(/:\/\/[^@]*@/, '://****@');
+  }
+};
+
 // Option A (recommended): Postgres on Render.
 // If we're on Render + production, require a non-SQLite DATABASE_URL (or DATABASE_URL_WRITE).
 if (isProduction && runningOnRender) {
@@ -69,16 +79,6 @@ if (looksLikePostgres(databaseUrl)) {
 }
 
 const baseWriteUrl = explicitWriteUrl || inferredWriteUrl;
-
-// Helper to mask password in URL for logging
-const maskDbUrl = (url: string) => {
-  try {
-    const u = new URL(url);
-    return `${u.protocol}//${u.host}${u.pathname}`;
-  } catch {
-    return url.replace(/:\/\/[^@]*@/, '://****@');
-  }
-};
 const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
 const ensureParams = (u: string, extra: Record<string, string>) => {
@@ -622,11 +622,13 @@ if (isSqlite) {
         updated_at TEXT
       )`;
       await sqlWrite`CREATE INDEX IF NOT EXISTS idx_audio_assign_specific ON audio_assignments(entity_type, entity_id, active, priority)`;
+      // Sessions table format required by connect-pg-simple
       await sqlWrite`CREATE TABLE IF NOT EXISTS sessions (
-        sid TEXT PRIMARY KEY,
-        sess TEXT NOT NULL,
-        expire TEXT NOT NULL
+        sid VARCHAR(255) NOT NULL PRIMARY KEY,
+        sess JSON NOT NULL,
+        expire TIMESTAMP(6) NOT NULL
       )`;
+      await sqlWrite`CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire)`;
       await sqlWrite`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE,

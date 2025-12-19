@@ -127,7 +127,7 @@ export function getSession() {
       const pgStore = connectPg(session);
       const sessionStore = new pgStore({
         conString: process.env.DATABASE_URL,
-        createTableIfMissing: false,
+        createTableIfMissing: true,  // Let connect-pg-simple create the table if needed
         ttl: sessionTtl,
         tableName: "sessions",
       });
@@ -145,8 +145,18 @@ export function getSession() {
         },
       });
     } catch (err) {
+      // On Render production, DO NOT fallback to SQLite - fail fast instead
+      if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
+        console.error('Fatal: Postgres session store initialization failed on Render production:', err);
+        throw new Error('Postgres session store is required on Render production (no SQLite fallback).');
+      }
       console.warn('Postgres session store initialization failed, falling back to SQLite store:', err);
     }
+  }
+
+  // On Render production, NEVER fallback to SQLite - fail fast if we reached here
+  if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
+    throw new Error('Fatal: Reached SQLite fallback on Render production. Ensure DATABASE_URL points to a valid Postgres instance.');
   }
 
   // Local fallback if nothing else matched: sqlite-backed session store
