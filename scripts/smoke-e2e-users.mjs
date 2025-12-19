@@ -68,18 +68,6 @@ function extractCookieFromResponse(resp) {
   return String(sc).split(';')[0];
 }
 
-async function verifyUserInLocalSqlite(userId) {
-  try {
-    const dbPath = path.resolve(process.cwd(), 'sorcerer', 'dev.sqlite');
-    if (!fs.existsSync(dbPath)) return { ok: false, reason: 'sqlite file not found' };
-    const { default: BetterSqlite3 } = await import('better-sqlite3');
-    const db = new BetterSqlite3(dbPath, { readonly: true });
-    const row = db.prepare('SELECT id, email, is_admin as isAdmin, password_hash as passwordHash FROM users WHERE id = ? LIMIT 1').get(userId);
-    return { ok: !!row, row };
-  } catch (e) {
-    return { ok: false, reason: e?.message || String(e) };
-  }
-}
 
 async function verifyUserInPostgres(userId) {
   try {
@@ -118,7 +106,7 @@ async function runForUser(n, totalUsers) {
   const registerPayload = { id, email: `${id}@example.test`, password: 'password123', firstName: `User ${n}` };
   const loginPayload = { id, password: 'password123' };
   let cookie = '';
-  const usePg = !!process.env.DATABASE_URL && !process.env.DATABASE_URL.startsWith('file:') && !process.env.DATABASE_URL.includes('sqlite');
+    const usePg = true;
 
   process.stdout.write(`\nUser ${n}/${totalUsers} -> ${id}\n`);
 
@@ -152,8 +140,8 @@ async function runForUser(n, totalUsers) {
 
   // 4) Verify in DB
   step = 4; renderBar(step, totalSteps, 'Verifying DB');
-  const dbCheck = usePg ? await verifyUserInPostgres(id) : await verifyUserInLocalSqlite(id);
-  if (!dbCheck.ok) throw new Error('User not found in DB: ' + (dbCheck.reason || 'unknown'));
+  const verification = await verifyUserInPostgres(id);
+  if (!verification.ok) throw new Error('User not found in DB: ' + (verification.reason || 'unknown'));
   await wait(150);
 
   renderBar(totalSteps, totalSteps, 'Done');

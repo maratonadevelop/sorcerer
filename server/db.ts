@@ -2,7 +2,6 @@
 import './ipv4-first';
 import './env';
 import * as schema from "@shared/schema";
-// SQLite code is in a separate file (sqlite-init.ts) to avoid bundling better-sqlite3
 import postgres from 'postgres';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 
@@ -13,29 +12,14 @@ const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production'
 const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
 
 // Debug: log environment detection
-console.log(`DB_PATH value: ${env('DB_PATH', '<unset>')}`);
 console.log(`RENDER detected: ${runningOnRender ? 'yes' : 'no'}`);
 console.log(`NODE_ENV: ${process.env.NODE_ENV || '<unset>'}`);
 console.log(`DATABASE_URL set: ${process.env.DATABASE_URL ? 'yes (length: ' + process.env.DATABASE_URL.length + ')' : 'no'}`);
 
-// Determine DB targets: prefer explicit WRITE/READ URLs; fallback to DATABASE_URL or SQLite.
-// IMPORTANT: For Render free tier we do NOT have a persistent disk; choose Postgres (DATABASE_URL).
-const sqlitePath = env('DB_PATH', '');
-const sqliteFallbackUrl = sqlitePath
-  ? (sqlitePath.startsWith('file:') ? sqlitePath : `file:${sqlitePath}`)
-  : 'file:./dev.sqlite';
-
-const looksLikeDefaultDevSqlite = (u: string) => {
-  const raw = (u || '').trim();
-  if (!raw) return false;
-  const normalized = raw.replace(/^file:/, '');
-  return normalized === './dev.sqlite' || normalized === 'dev.sqlite' || normalized.endsWith('/dev.sqlite') || normalized.endsWith('\\dev.sqlite');
-};
-
 const databaseUrl = env('DATABASE_URL', '');
 const explicitWriteUrl = env('DATABASE_URL_WRITE', '');
 
-// On Render, ALWAYS use DATABASE_URL if it looks like Postgres
+// Helper: detect Postgres URL
 const looksLikePostgres = (u: string) => u.startsWith('postgres://') || u.startsWith('postgresql://');
 
 // Helper to mask password in URL for logging (defined early for use in error messages)
@@ -48,35 +32,16 @@ const maskDbUrl = (url: string) => {
   }
 };
 
-// Option A (recommended): Postgres on Render.
-// If we're on Render + production, require a non-SQLite DATABASE_URL (or DATABASE_URL_WRITE).
-if (isProduction && runningOnRender) {
-  const effective = explicitWriteUrl || databaseUrl;
-  const looksSqlite = (effective || '').startsWith('file:') || (effective || '').toLowerCase().includes('sqlite');
-  if (!effective || looksSqlite || looksLikeDefaultDevSqlite(effective)) {
-    // Fail fast with actionable guidance.
-    // eslint-disable-next-line no-console
-    console.error('Fatal: Render production requires Postgres. Set DATABASE_URL to a Postgres connection string (Supabase/Neon).');
-    // eslint-disable-next-line no-console
-    console.error('Do not use SQLite (file:./dev.sqlite) on Render free tier (no persistent disk).');
-    console.error(`Current DATABASE_URL: ${databaseUrl ? maskDbUrl(databaseUrl) : '<empty>'}`);
-    process.exit(1);
-  }
+// Require Postgres in all environments except local dev if explicitly desired.
+// This repo is now Postgres-only by request.
+const effectiveWriteUrl = explicitWriteUrl || databaseUrl;
+if (!effectiveWriteUrl || !looksLikePostgres(effectiveWriteUrl)) {
+  console.error('Fatal: DATABASE_URL (or DATABASE_URL_WRITE) must be set to a Postgres connection string.');
+  console.error(`Current DATABASE_URL: ${databaseUrl ? maskDbUrl(databaseUrl) : '<empty>'}`);
+  process.exit(1);
 }
 
-// If DATABASE_URL looks like Postgres, use it directly (ignore DB_PATH/SQLite fallback)
-// If DB_PATH is configured and DATABASE_URL is empty or still pointing at the local default,
-// prefer DB_PATH so Render SQLite deployments don't accidentally use ./dev.sqlite.
-let inferredWriteUrl: string;
-if (looksLikePostgres(databaseUrl)) {
-  inferredWriteUrl = databaseUrl;
-} else if (sqlitePath && (!databaseUrl || looksLikeDefaultDevSqlite(databaseUrl))) {
-  inferredWriteUrl = sqliteFallbackUrl;
-} else {
-  inferredWriteUrl = databaseUrl || sqliteFallbackUrl;
-}
-
-const baseWriteUrl = explicitWriteUrl || inferredWriteUrl;
+const baseWriteUrl = effectiveWriteUrl;
 const baseReadUrl = env('DATABASE_URL_READ', baseWriteUrl);
 
 const ensureParams = (u: string, extra: Record<string, string>) => {
@@ -90,9 +55,6 @@ const ensureParams = (u: string, extra: Record<string, string>) => {
     return u;
   }
 };
-
-// Helper: detect sqlite vs postgres (based on write URL)
-const isSqlite = baseWriteUrl.startsWith('file:') || baseWriteUrl.includes('sqlite');
 
 // Exports: db (Drizzle instance) and pool (raw connection object)
 let db: any;
@@ -120,19 +82,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 2, baseDelayMs = 120):
   throw lastErr;
 }
 
-if (isSqlite) {
-  // Initialize SQLite connection for local dev
-  // IMPORTANT: SQLite code is in a SEPARATE FILE to avoid esbuild bundling better-sqlite3
-  // This is critical for Render production which uses PostgreSQL only
-  const sqliteFile = baseWriteUrl.replace(/^file:/, '');
-  
-  // Dynamic import of the separate SQLite module
-  // esbuild will NOT bundle this because it's a dynamic import of a local file
-  const { initSqlite } = await import('./sqlite-init.js');
-  const result = initSqlite(sqliteFile);
-  db = result.db;
-  pool = result.pool;
-} else {
+{
   // Postgres (Supabase) connection via postgres-js
   // Normalize URLs with pgBouncer and TLS parameters
   // Use pooler by host:port only (e.g., 6543 on Supabase). Do not add unknown params like 'pgbouncer'.
@@ -357,7 +307,6 @@ if (isSqlite) {
 // Health helpers for /ready
 export async function dbReadyPing(): Promise<boolean> {
   try {
-    if (isSqlite) return true;
     const read = (pool as any)?._sqlRead || pool;
     await withRetry(() => read`select 1`, 2);
     failStreak = 0;
@@ -374,10 +323,6 @@ export function dbCircuitOpen(): boolean {
 }
 
 export async function dbInit() {
-  if (isSqlite) {
-    console.log(`Using database (sqlite): ${maskDbUrl(baseWriteUrl)}`);
-    return;
-  }
   if ((pool as any)?._init) {
     await (pool as any)._init();
   }

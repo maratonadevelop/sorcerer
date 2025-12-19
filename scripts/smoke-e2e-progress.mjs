@@ -37,20 +37,6 @@ function extractCookieFromResponse(resp) {
   return String(sc).split(';')[0];
 }
 
-async function verifyUserInLocalSqlite(userId) {
-  // Check sorcerer/dev.sqlite for the user
-  try {
-    const dbPath = path.resolve(process.cwd(), 'sorcerer', 'dev.sqlite');
-    if (!fs.existsSync(dbPath)) return { ok: false, reason: 'sqlite file not found' };
-    const { default: BetterSqlite3 } = await import('better-sqlite3');
-    const db = new BetterSqlite3(dbPath, { readonly: true });
-    const row = db.prepare('SELECT id, email, is_admin as isAdmin, password_hash as passwordHash FROM users WHERE id = ? LIMIT 1').get(userId);
-    return { ok: !!row, row };
-  } catch (e) {
-    return { ok: false, reason: e?.message || String(e) };
-  }
-}
-
 async function verifyUserInPostgres(userId) {
   try {
     const url = process.env.DATABASE_URL;
@@ -163,8 +149,8 @@ async function main() {
 
   // Step 4: verify user exists in DB (prefer Postgres when configured)
   step = 4; renderBar(step, total, 'Verifying DB user');
-  const usePg = !!process.env.DATABASE_URL && !process.env.DATABASE_URL.startsWith('file:') && !process.env.DATABASE_URL.includes('sqlite');
-  const dbCheck = usePg ? await verifyUserInPostgres(id) : await verifyUserInLocalSqlite(id);
+  const usePg = true;
+  const dbCheck = await verifyUserInPostgres(id);
   process.stdout.write('\n\nDB user check: ' + (dbCheck.ok ? 'FOUND' : 'NOT FOUND') + '\n');
   if (!dbCheck.ok && dbCheck.reason) process.stdout.write('Reason: ' + dbCheck.reason + '\n');
   if (dbCheck.ok) process.stdout.write('Row: ' + JSON.stringify(dbCheck.row) + '\n');

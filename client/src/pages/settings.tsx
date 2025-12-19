@@ -10,6 +10,7 @@ import { authHeaders } from '@/lib/authHeaders';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ShieldCheck, Loader2, Camera, Eye, EyeOff, Lock, Mail, Save, X, Moon, Sun, Monitor, Trash2, LogOut, Sparkles } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 
 function fileToDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -38,6 +39,7 @@ export default function SettingsPage() {
   const { user, isAuthenticated } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');

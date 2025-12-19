@@ -89,8 +89,7 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   constructor() {
     // Run async seeding/migrations in background. seedData() is async and will
-    // perform safe, idempotent actions depending on whether we're running
-    // against SQLite (pool.prepare exists) or Postgres (postgres-js pool/tagged template).
+    // perform safe, idempotent actions for Postgres.
     // We intentionally don't await here to avoid blocking construction.
     this.seedData();
   }
@@ -649,11 +648,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async resolveAudio(params: { page?: string; chapterId?: string; characterId?: string; codexId?: string; locationId?: string }): Promise<AudioTrack | undefined> {
-    // Optimized strategy: single SQL query selecting only relevant assignments ordered by specificity & priority.
-    // Specificity order (descending): chapter|character|codex|location (3) > global (2) > page (1)
-    // Optimized: SQL-side filtering and ranking, then fetch top 1 track
     try {
-      const isSqlite = typeof (pool as any)?.prepare === 'function';
       const wants: Array<{ type: string; id?: string }> = [];
       if (params.chapterId) wants.push({ type: 'chapter', id: params.chapterId });
       if (params.characterId) wants.push({ type: 'character', id: params.characterId });
@@ -663,52 +658,25 @@ export class DatabaseStorage implements IStorage {
       // Always consider global
       wants.push({ type: 'global' });
 
-      // Build dynamic WHERE with OR branches for the provided contexts
-      const branches: string[] = [];
-      const values: any[] = [];
-      for (const w of wants) {
-        if (w.type === 'global') {
-          branches.push(`(entity_type = ${isSqlite ? '?' : '$$global$$'} AND (entity_id IS NULL OR entity_id = ''))`);
-          if (isSqlite) values.push('global');
-        } else if (w.type === 'page') {
-          branches.push(`(entity_type = ${isSqlite ? '?' : '$$page$$'} AND entity_id = ${isSqlite ? '?' : '$$__page__$$'})`);
-          if (isSqlite) { values.push('page', w.id); }
-        } else {
-          branches.push(`(entity_type = ${isSqlite ? '?' : '$$' + w.type + '$$'} AND entity_id = ${isSqlite ? '?' : '$$__' + w.type + '__$$'})`);
-          if (isSqlite) { values.push(w.type, w.id); }
-        }
-      }
-      const where = branches.length > 0 ? `active = 1 AND (${branches.join(' OR ')})` : `active = 1`;
-      const rankCase = `CASE entity_type WHEN 'chapter' THEN 3 WHEN 'character' THEN 3 WHEN 'codex' THEN 3 WHEN 'location' THEN 3 WHEN 'global' THEN 2 ELSE 1 END`;
-      if (isSqlite) {
-        const sql = `SELECT * FROM audio_assignments WHERE ${where} ORDER BY ${rankCase} DESC, priority DESC LIMIT 1`;
-        const row = (pool as any).prepare(sql).get(...values) as any | undefined;
-        if (!row) return undefined;
-        return await this.getAudioTrack(row.track_id);
-      } else {
-        // Postgres path via postgres-js tagged template. We can't dynamically insert placeholders easily per-branch,
-        // so do a simpler two-phase approach when not sqlite: fetch filtered rows with JS conditions then rank in SQL-like order.
-        const list = await this.getAudioAssignments();
-        const filtered = (list || []).filter((a) => {
-          if (!a.active) return false;
-          // Match specific
-          if (a.entityType === 'chapter' && params.chapterId) return a.entityId === params.chapterId;
-          if (a.entityType === 'character' && params.characterId) return a.entityId === params.characterId;
-          if (a.entityType === 'codex' && params.codexId) return a.entityId === params.codexId;
-          if (a.entityType === 'location' && params.locationId) return a.entityId === params.locationId;
-          if (a.entityType === 'page' && params.page) return a.entityId === params.page;
-          if (a.entityType === 'global') return true;
-          return false;
-        });
-        if (filtered.length === 0) return undefined;
-        const specRank = (t: string) => ['chapter','character','codex','location'].includes(t) ? 3 : (t === 'global' ? 2 : 1);
-        filtered.sort((a,b) => {
-          const s = specRank(b.entityType) - specRank(a.entityType);
-          if (s !== 0) return s;
-          return (b.priority || 0) - (a.priority || 0);
-        });
-        return await this.getAudioTrack(filtered[0].trackId);
-      }
+      const list = await this.getAudioAssignments();
+      const filtered = (list || []).filter((a) => {
+        if (!a.active) return false;
+        if (a.entityType === 'chapter' && params.chapterId) return a.entityId === params.chapterId;
+        if (a.entityType === 'character' && params.characterId) return a.entityId === params.characterId;
+        if (a.entityType === 'codex' && params.codexId) return a.entityId === params.codexId;
+        if (a.entityType === 'location' && params.locationId) return a.entityId === params.locationId;
+        if (a.entityType === 'page' && params.page) return a.entityId === params.page;
+        if (a.entityType === 'global') return true;
+        return false;
+      });
+      if (filtered.length === 0) return undefined;
+      const specRank = (t: string) => ['chapter','character','codex','location'].includes(t) ? 3 : (t === 'global' ? 2 : 1);
+      filtered.sort((a,b) => {
+        const s = specRank(b.entityType) - specRank(a.entityType);
+        if (s !== 0) return s;
+        return (b.priority || 0) - (a.priority || 0);
+      });
+      return await this.getAudioTrack(filtered[0].trackId);
     } catch (e) {
       console.warn('resolveAudio failed:', e);
       return undefined;
@@ -717,20 +685,7 @@ export class DatabaseStorage implements IStorage {
 
   private async seedData() {
     try {
-      // Helper: read/write meta flags using the raw pool. Use sqlite-style
-      // prepared statements when available (pool.prepare), otherwise use
-      // postgres-js tagged templates via the pool function.
-      const isSqlitePool = typeof (pool as any)?.prepare === 'function';
-
       const getMeta = async (key: string): Promise<string | undefined> => {
-        if (isSqlitePool) {
-          try {
-            const row = (pool as any).prepare("SELECT value FROM meta WHERE key = ? LIMIT 1").get(key) as any;
-            return row?.value as string | undefined;
-          } catch {
-            return undefined;
-          }
-        }
         try {
           const rows = await (pool as any)`SELECT value FROM meta WHERE key=${key} LIMIT 1`;
           return rows && rows[0] ? rows[0].value : undefined;
@@ -741,30 +696,15 @@ export class DatabaseStorage implements IStorage {
 
       const setMeta = async (key: string, value: string) => {
         const iso = new Date().toISOString();
-        if (isSqlitePool) {
+        try {
+          await (pool as any)`INSERT INTO meta(key, value, updated_at) VALUES(${key}, ${value}, ${iso}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at`;
+          return;
+        } catch (e) {
           try {
-            (pool as any)
-              .prepare("INSERT INTO meta(key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at")
-              .run(key, value, iso);
+            await (pool as any)`DELETE FROM meta WHERE key=${key}`;
+            await (pool as any)`INSERT INTO meta(key, value, updated_at) VALUES(${key}, ${value}, ${iso})`;
             return;
-          } catch {
-            try {
-              (pool as any).prepare("INSERT OR REPLACE INTO meta(key, value, updated_at) VALUES (?, ?, ?)").run(key, value, iso);
-              return;
-            } catch {}
-          }
-        } else {
-          try {
-            await (pool as any)`INSERT INTO meta(key, value, updated_at) VALUES(${key}, ${value}, ${iso}) ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at`;
-            return;
-          } catch (e) {
-            // best-effort fallback: try a simple upsert via delete/insert (unlikely needed)
-            try {
-              await (pool as any)`DELETE FROM meta WHERE key=${key}`;
-              await (pool as any)`INSERT INTO meta(key, value, updated_at) VALUES(${key}, ${value}, ${iso})`;
-              return;
-            } catch {}
-          }
+          } catch {}
         }
       };
       // Always ensure Codex has at least one entry (independent of chapters)
@@ -844,30 +784,13 @@ O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para 
       // Perform a safe ALTER TABLE depending on DB type. Errors are ignored
       // (idempotent behavior).
       try {
-        if (typeof (pool as any)?.prepare === 'function') {
-          try { (pool as any).prepare("ALTER TABLE codex_entries ADD COLUMN content TEXT;").run(); } catch {}
-        } else {
-          try { await (pool as any)`ALTER TABLE codex_entries ADD COLUMN content TEXT`; } catch {}
-        }
+        try { await (pool as any)`ALTER TABLE codex_entries ADD COLUMN content TEXT`; } catch {}
       } catch {}
 
       // Ensure audio_tracks has volume_user_max column (per-track user volume ceiling)
       try {
-        const isSqlite = typeof (pool as any)?.prepare === 'function';
-        if (isSqlite) {
-          try {
-            const cols = (pool as any).prepare("PRAGMA table_info('audio_tracks');").all();
-            const hasCol = Array.isArray(cols) && cols.some((c: any) => String(c.name) === 'volume_user_max');
-            if (!hasCol) {
-              try { (pool as any).prepare("ALTER TABLE audio_tracks ADD COLUMN volume_user_max INTEGER DEFAULT 70 NOT NULL;").run(); } catch {}
-            }
-            // Indexes to speed up audio assignment resolution
-            try { (pool as any).prepare("CREATE INDEX IF NOT EXISTS idx_audio_assignments_entity ON audio_assignments(entity_type, entity_id, active, priority);").run(); } catch {}
-          } catch {}
-        } else {
-          try { await (pool as any)`ALTER TABLE audio_tracks ADD COLUMN volume_user_max INTEGER DEFAULT 70 NOT NULL`; } catch {}
-          try { await (pool as any)`CREATE INDEX IF NOT EXISTS idx_audio_assignments_entity ON audio_assignments(entity_type, entity_id, active, priority)`; } catch {}
-        }
+        try { await (pool as any)`ALTER TABLE audio_tracks ADD COLUMN volume_user_max INTEGER DEFAULT 70 NOT NULL`; } catch {}
+        try { await (pool as any)`CREATE INDEX IF NOT EXISTS idx_audio_assignments_entity ON audio_assignments(entity_type, entity_id, active, priority)`; } catch {}
       } catch {}
 
       // FullNOVEL.md import on startup
@@ -956,15 +879,7 @@ O Primeiro Feiticeiro havia retornado, mas o mundo que ele conhecia se foi para 
 
       // Ensure users table has password_hash column (idempotent runtime migration)
       try {
-        if (isSqlitePool) {
-          const cols = (pool as any).prepare("PRAGMA table_info('users');").all();
-          const hasPwd = cols.some((c: any) => c.name === 'password_hash');
-          if (!hasPwd) {
-            try { (pool as any).prepare("ALTER TABLE users ADD COLUMN password_hash TEXT;").run(); } catch {}
-          }
-        } else {
-          try { await (pool as any)`ALTER TABLE users ADD COLUMN password_hash TEXT`; } catch {}
-        }
+        try { await (pool as any)`ALTER TABLE users ADD COLUMN password_hash TEXT`; } catch {}
       } catch (e) {}
 
       // Seed characters (idempotent by slug) — run only once unless FORCE_SEED_CHARACTERS=true

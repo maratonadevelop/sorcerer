@@ -3,8 +3,6 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 import { getDevTokenFromReq, verifyDevToken } from './devToken';
-// connect-sqlite3 is lazy-loaded only when needed (not on Render production)
-// import connectSqlite3 from 'connect-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
@@ -111,77 +109,27 @@ export async function getSession() {
     });
   }
 
-  // If DATABASE_URL is provided and it's NOT SQLite, prefer a Postgres-backed session store in non-dev envs.
   const dbUrl = process.env.DATABASE_URL || '';
-  const dbLooksSqlite = dbUrl.startsWith('file:') || dbUrl.toLowerCase().includes('sqlite');
-
-  // Render free tier has no persistent disk for SQLite. Require Postgres sessions in production.
-  const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
-  if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
-    if (!dbUrl || dbLooksSqlite) {
-      throw new Error('Render production requires Postgres DATABASE_URL (SQLite session store is not supported without a disk).');
-    }
+  if (!dbUrl || (!dbUrl.startsWith('postgres://') && !dbUrl.startsWith('postgresql://'))) {
+    throw new Error('DATABASE_URL must be set to a Postgres connection string for sessions.');
   }
 
-  if (dbUrl && !dbLooksSqlite) {
-    try {
-      const pgStore = connectPg(session);
-      const sessionStore = new pgStore({
-        conString: process.env.DATABASE_URL,
-        createTableIfMissing: true,  // Let connect-pg-simple create the table if needed
-        ttl: sessionTtl,
-        tableName: "sessions",
-      });
-      return session({
-        name: process.env.SESSION_COOKIE_NAME || 'sorcerer.sid',
-        secret: process.env.SESSION_SECRET!,
-        store: sessionStore,
-        resave: false,
-        saveUninitialized: false,
-        cookie: {
-          httpOnly: true,
-          secure: true,
-          sameSite: 'lax',
-          maxAge: sessionTtl,
-        },
-      });
-    } catch (err) {
-      // On Render production, DO NOT fallback to SQLite - fail fast instead
-      if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
-        console.error('Fatal: Postgres session store initialization failed on Render production:', err);
-        throw new Error('Postgres session store is required on Render production (no SQLite fallback).');
-      }
-      console.warn('Postgres session store initialization failed, falling back to SQLite store:', err);
-    }
-  }
-
-  // On Render production, NEVER fallback to SQLite - fail fast if we reached here
-  if ((process.env.NODE_ENV || '').toLowerCase() === 'production' && runningOnRender) {
-    throw new Error('Fatal: Reached SQLite fallback on Render production. Ensure DATABASE_URL points to a valid Postgres instance.');
-  }
-
-  // Local fallback if nothing else matched: sqlite-backed session store
-  // Dynamic import to avoid loading connect-sqlite3/better-sqlite3 on Render production
-  const { default: connectSqlite3 } = await import('connect-sqlite3');
-  const SQLiteStore = connectSqlite3(session);
-  // Allow separate auth DB file if AUTH_DB_FILE is set (default dev.sqlite)
-  const authDbFile = process.env.AUTH_DB_FILE || process.env.DB_PATH || 'dev.sqlite';
-  const resolvedAuthDbFile = path.isAbsolute(authDbFile)
-    ? authDbFile
-    : path.resolve(process.cwd(), authDbFile);
+  const pgStore = connectPg(session);
+  const sessionStore = new pgStore({
+    conString: process.env.DATABASE_URL,
+    createTableIfMissing: true,
+    ttl: sessionTtl,
+    tableName: "sessions",
+  });
   return session({
     name: process.env.SESSION_COOKIE_NAME || 'sorcerer.sid',
-    store: new SQLiteStore({
-      db: path.basename(resolvedAuthDbFile),
-      dir: path.dirname(resolvedAuthDbFile),
-      table: 'sessions'
-    }) as any,
-    secret: process.env.SESSION_SECRET || 'dev-secret',
+    secret: process.env.SESSION_SECRET!,
+    store: sessionStore,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: false, // Secure must be false for localhost HTTP
+      secure: true,
       sameSite: 'lax',
       maxAge: sessionTtl,
     },

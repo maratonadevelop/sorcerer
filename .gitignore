@@ -1,22 +1,37 @@
-﻿node_modules
+﻿node_modules/
+
+# env (never commit secrets)
 .env
 .env.local
 .env.migrate
 .env.migrate.local
+
+# build output
+dist/
+
+# local sqlite/db artifacts (no longer used, keep ignored)
 dev.sqlite
 *.sqlite
-dist/
-stable-version.bundle
+
+# local/session artifacts
 cookies.session
+cookies.txt
+
+# backups/tmp
 tmp_commit_backup/
+tmp_*.json
+stable-version.bundle
+
+# editor/OS
 .vscode/
 .DS_Store
+
+# logs
 server.log
 *.log
-tmp_*.json
+npm-debug.log
 
-# Keep uploads tracked but ignore large files
+# Keep uploads tracked but ignore large/backup files
 uploads/*.mp4.bak
 uploads/*.orig.*
-
 

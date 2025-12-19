@@ -9,7 +9,7 @@ try {
   const isProduction = (process.env.NODE_ENV || '').toLowerCase() === 'production';
   const runningOnRender = !!process.env.RENDER || !!process.env.RENDER_EXTERNAL_URL;
   // In production (especially Render), never load local .env files.
-  // Those files are for dev only and can accidentally force DATABASE_URL=file:./dev.sqlite.
+  // Those files are for dev only and can accidentally override DATABASE_URL.
   if (isProduction || runningOnRender) {
     // Best effort; keep server running with process.env
     // eslint-disable-next-line no-empty

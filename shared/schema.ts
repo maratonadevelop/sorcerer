@@ -1,9 +1,9 @@
 ﻿import { sql } from "drizzle-orm";
-import { sqliteTable, text, integer, index } from "drizzle-orm/sqlite-core";
+import { pgTable, text, integer, index, varchar, json, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
-export const chapters = sqliteTable("chapters", {
+export const chapters = pgTable("chapters", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   // Localized versions for UI content (optional)
@@ -22,7 +22,7 @@ export const chapters = sqliteTable("chapters", {
   imageUrl: text("image_url"),
 });
 
-export const characters = sqliteTable("characters", {
+export const characters = pgTable("characters", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   nameI18n: text("name_i18n"),
@@ -35,7 +35,7 @@ export const characters = sqliteTable("characters", {
   role: text("role").notNull(), // protagonist, antagonist, supporting
 });
 
-export const locations = sqliteTable("locations", {
+export const locations = pgTable("locations", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   nameI18n: text("name_i18n"),
@@ -54,7 +54,7 @@ export const locations = sqliteTable("locations", {
   type: text("type").notNull(), // kingdom, forest, ruins, etc.
 });
 
-export const codexEntries = sqliteTable("codex_entries", {
+export const codexEntries = pgTable("codex_entries", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   titleI18n: text("title_i18n"),
@@ -67,7 +67,7 @@ export const codexEntries = sqliteTable("codex_entries", {
   imageUrl: text("image_url"),
 });
 
-export const blogPosts = sqliteTable("blog_posts", {
+export const blogPosts = pgTable("blog_posts", {
   id: text("id").primaryKey(),
   title: text("title").notNull(),
   titleI18n: text("title_i18n"),
@@ -81,8 +81,8 @@ export const blogPosts = sqliteTable("blog_posts", {
   imageUrl: text("image_url"),
 });
 
-export const readingProgress = sqliteTable("reading_progress", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+export const readingProgress = pgTable("reading_progress", {
+  id: text("id").primaryKey(),
   chapterId: text("chapter_id").notNull().references(() => chapters.id),
   sessionId: text("session_id").notNull(), // browser session
   progress: integer("progress").notNull().default(0), // percentage read
@@ -91,8 +91,8 @@ export const readingProgress = sqliteTable("reading_progress", {
 
 // Audio system tables (initial minimal design)
 // Tracks are uploaded audio assets (music, ambient loops, etc.).
-export const audioTracks = sqliteTable("audio_tracks", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+export const audioTracks = pgTable("audio_tracks", {
+  id: text("id").primaryKey(),
   title: text("title").notNull(),
   // classification for UI filtering: music | ambient | sfx
   kind: text("kind").notNull(),
@@ -109,8 +109,8 @@ export const audioTracks = sqliteTable("audio_tracks", {
 
 // Assignments map a track to an entity (chapter, character, codex entry, location) or a page/global.
 // Resolution order will consider specificity & priority.
-export const audioAssignments = sqliteTable("audio_assignments", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+export const audioAssignments = pgTable("audio_assignments", {
+  id: text("id").primaryKey(),
   trackId: text("track_id").notNull().references(() => audioTracks.id),
   // entityType: 'global'|'page'|'chapter'|'character'|'codex'|'location'
   entityType: text("entity_type").notNull(),
@@ -183,20 +183,20 @@ export type InsertAudioAssignment = z.infer<typeof insertAudioAssignmentSchema>;
 
 // Session storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const sessions = sqliteTable(
+export const sessions = pgTable(
   "sessions",
   {
-    sid: text("sid").primaryKey(),
-    sess: text("sess").notNull(),
-    expire: text("expire").notNull(),
+    sid: varchar("sid", { length: 255 }).primaryKey(),
+    sess: json("sess").notNull(),
+    expire: timestamp("expire", { precision: 6 }).notNull(),
   },
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
 // User storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
-export const users = sqliteTable("users", {
-  id: text("id").primaryKey().default(sql`gen_random_uuid()`),
+export const users = pgTable("users", {
+  id: text("id").primaryKey(),
   email: text("email").unique(),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -212,7 +212,7 @@ export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 
 // Simple key-value metadata table for feature flags and one-time markers
-export const meta = sqliteTable("meta", {
+export const meta = pgTable("meta", {
   key: text("key").primaryKey(),
   value: text("value"),
   updatedAt: text("updated_at"),
