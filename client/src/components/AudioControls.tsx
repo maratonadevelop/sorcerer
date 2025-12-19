@@ -4,11 +4,13 @@ import { Volume2, VolumeX, Music2, X } from 'lucide-react';
 
 // Further minimized: subtle button, no tooltip, reduced gold usage, smaller panel.
 export default function AudioControls() {
-  const { currentTrack, muted, toggleMute, volume, setVolume, autoplayBlocked, play } = useAudio();
+  const { currentTrack, muted, toggleMute, volume, volumeUserMax, setVolume, autoplayBlocked, play } = useAudio();
   const [open, setOpen] = useState(false);
 
   const accent = '#c8a64a';
   const [sliderActive, setSliderActive] = useState(false);
+
+  const maxPct = typeof volumeUserMax === 'number' ? Math.round(volumeUserMax * 100) : 100;
 
   return (
     <div style={{ position: 'fixed', right: 12, bottom: 12, zIndex: 50 }} className="select-none">
@@ -69,7 +71,7 @@ export default function AudioControls() {
                 aria-label="Volume"
                 type="range"
                 min={0}
-                max={100}
+                max={maxPct}
                 step={1}
                 value={Math.round(volume * 100)}
                 onChange={(e) => setVolume(parseInt(e.target.value, 10) / 100)}

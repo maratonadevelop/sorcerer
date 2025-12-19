@@ -9,6 +9,7 @@ export type AudioContextShape = {
   playing: boolean;
   muted: boolean;
   volume: number; // 0-1
+  volumeUserMax: number | null; // 0-1 (admin-defined cap for this track)
   play: () => void;
   pause: () => void;
   toggleMute: () => void;
@@ -46,9 +47,20 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     } catch { return false; }
   });
   const initialAutoUnmuteDone = useRef(false);
-  const [volume, _setVolume] = useState<number>(() => {
-    try { const s = localStorage.getItem('audio.volume'); const n = s ? parseFloat(s) : 0.7; return isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.7; } catch { return 0.7; }
-  });
+  const initialVolumeStateRef = useRef<{ volume: number; hadStored: boolean } | null>(null);
+  if (!initialVolumeStateRef.current) {
+    try {
+      const s = localStorage.getItem('audio.volume');
+      const hadStored = s !== null;
+      const n = s ? parseFloat(s) : 0.7;
+      const vol = isFinite(n) ? Math.min(1, Math.max(0, n)) : 0.7;
+      initialVolumeStateRef.current = { volume: vol, hadStored };
+    } catch {
+      initialVolumeStateRef.current = { volume: 0.7, hadStored: false };
+    }
+  }
+  const hasUserVolumePreferenceRef = useRef<boolean>(initialVolumeStateRef.current.hadStored);
+  const [volume, _setVolume] = useState<number>(initialVolumeStateRef.current.volume);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   // Cache audio resolution results to avoid repeated /api/audio/resolve calls.
@@ -61,17 +73,21 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => { mutedRef.current = muted; }, [muted]);
   useEffect(() => { volumeRef.current = volume; }, [volume]);
 
-  // Ambient volume mapping: user volume (0..1) is remapped to a softer effective range
-  // so background music remains unobtrusive even at max slider.
-  const AMBIENT_MIN = 0.15; // floor loudness when not muted
-  const AMBIENT_MAX = 0.55; // global cap loudness
+  // Volume behavior:
+  // - `volume` is the user's preferred volume (0..1).
+  // - `volumeUserMax` is an admin-defined cap per track (0..1).
+  // - `volumeDefault` (0-100) is used as the start volume ONLY when the user hasn't chosen a preference.
+  const getTrackUserMax = useCallback((track: any | null | undefined): number | null => {
+    const pct = track && typeof track.volumeUserMax === 'number' ? track.volumeUserMax : null;
+    if (typeof pct !== 'number') return null;
+    return Math.min(1, Math.max(0, pct / 100));
+  }, []);
   const computeEffectiveVolume = useCallback((userVol: number, trackUserMaxPct?: number) => {
     const v = Math.min(1, Math.max(0, userVol));
-    // trackUserMaxPct is 0-100; normalize to 0..1 and cap with AMBIENT_MAX
-    const trackCap = typeof trackUserMaxPct === 'number' ? Math.min(1, Math.max(0, trackUserMaxPct / 100)) : 1;
-    const cap = Math.max(AMBIENT_MIN, Math.min(AMBIENT_MAX, trackCap));
-    return AMBIENT_MIN + v * (cap - AMBIENT_MIN);
+    const cap = typeof trackUserMaxPct === 'number' ? Math.min(1, Math.max(0, trackUserMaxPct / 100)) : null;
+    return typeof cap === 'number' ? Math.min(v, cap) : v;
   }, []);
+  const volumeUserMax = useMemo(() => getTrackUserMax(currentTrack as any), [currentTrack, getTrackUserMax]);
   const effectiveVolume = useMemo(() => {
     const userMax = (currentTrack as any)?.volumeUserMax as number | undefined;
     return computeEffectiveVolume(volume, userMax);
@@ -90,10 +106,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   }, [effectiveVolume, muted]);
 
   const setVolume = useCallback((v: number) => {
-    const clamped = Math.min(1, Math.max(0, v));
+    const userMaxPct = (currentTrack as any)?.volumeUserMax as number | undefined;
+    const clamped = computeEffectiveVolume(v, userMaxPct);
     _setVolume(clamped);
+    hasUserVolumePreferenceRef.current = true;
     try { localStorage.setItem('audio.volume', String(clamped)); } catch {}
-  }, []);
+  }, [currentTrack, computeEffectiveVolume]);
 
   const toggleMute = useCallback(() => {
     setMuted((m) => {
@@ -324,6 +342,30 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     }
   }, [currentTrack, playing, muted, volume, applyVolumes]);
 
+  // Enforce admin volume cap + apply admin default start volume
+  useEffect(() => {
+    if (!currentTrack) return;
+    const cap = volumeUserMax;
+    if (typeof cap === 'number' && volume > cap) {
+      // Persist clamp so old saved values don't exceed the new cap.
+      _setVolume(cap);
+      hasUserVolumePreferenceRef.current = true;
+      try { localStorage.setItem('audio.volume', String(cap)); } catch {}
+      return;
+    }
+
+    if (hasUserVolumePreferenceRef.current) return;
+    const defaultPct = typeof (currentTrack as any).volumeDefault === 'number' ? (currentTrack as any).volumeDefault : null;
+    if (typeof defaultPct !== 'number') return;
+    const desired = Math.min(1, Math.max(0, defaultPct / 100));
+    const userMaxPct = (currentTrack as any)?.volumeUserMax as number | undefined;
+    const clamped = computeEffectiveVolume(desired, userMaxPct);
+    if (Math.abs(clamped - volume) > 0.0001) {
+      // Do not persist: keep it as an admin-controlled default until user moves slider.
+      _setVolume(clamped);
+    }
+  }, [currentTrack, volumeUserMax, volume, computeEffectiveVolume]);
+
   const value = useMemo<AudioContextShape>(() => ({
     page,
     setPage,
@@ -332,12 +374,13 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     playing,
     muted,
     volume,
+    volumeUserMax,
     play,
     pause,
     toggleMute,
     setVolume,
     autoplayBlocked,
-  }), [page, setPage, setEntity, currentTrack, playing, muted, volume, play, pause, toggleMute, setVolume, autoplayBlocked]);
+  }), [page, setPage, setEntity, currentTrack, playing, muted, volume, volumeUserMax, play, pause, toggleMute, setVolume, autoplayBlocked]);
 
   // Autoplay gesture fallback: listen first user interaction if blocked
   useEffect(() => {

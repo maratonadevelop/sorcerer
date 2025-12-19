@@ -39,6 +39,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const AUDIO_RESOLVE_RATE_WINDOW_MS = 60 * 1000;
   const AUDIO_RESOLVE_RATE_MAX = 30;
 
+  const invalidateAudioResolveCache = () => {
+    try { audioResolveCache.clear(); } catch {}
+  };
+
   const uploadsRoot = process.env.UPLOADS_DIR
     ? path.resolve(process.env.UPLOADS_DIR)
     : path.resolve(process.cwd(), 'uploads');
@@ -676,6 +680,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!data.kind) data.kind = 'music';
       const validated = insertAudioTrackSchema.parse(data);
       const track = await storage.createAudioTrack(validated as any);
+      invalidateAudioResolveCache();
       return res.status(201).json(track);
     } catch (e) {
       if (e instanceof ZodError) return res.status(400).json({ message: 'Validation failed', issues: e.errors });
@@ -688,11 +693,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const patch = insertAudioTrackSchema.partial().parse(data);
       const updated = await storage.updateAudioTrack(req.params.id, patch as any);
       if (!updated) return res.status(404).json({ message: 'Track not found' });
+      invalidateAudioResolveCache();
       return res.json(updated);
     } catch (e) { if (e instanceof ZodError) return res.status(400).json({ message: 'Validation failed', issues: e.errors }); console.error('Update audio track error:', e); return res.status(500).json({ message: 'Failed to update audio track' }); }
   });
   app.delete('/api/admin/audio/tracks/:id', isAdmin, async (req, res) => {
-    try { const ok = await storage.deleteAudioTrack(req.params.id); if (!ok) return res.status(404).json({ message: 'Track not found' }); return res.json({ ok: true }); } catch (e) { console.error('Delete audio track error:', e); return res.status(500).json({ message: 'Failed to delete audio track' }); }
+    try {
+      const ok = await storage.deleteAudioTrack(req.params.id);
+      if (!ok) return res.status(404).json({ message: 'Track not found' });
+      invalidateAudioResolveCache();
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('Delete audio track error:', e);
+      return res.status(500).json({ message: 'Failed to delete audio track' });
+    }
   });
 
   // Audio assignments
@@ -704,6 +718,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!data.entityType) data.entityType = 'global';
       const validated = insertAudioAssignmentSchema.parse(data);
       const created = await storage.createAudioAssignment(validated as any);
+      invalidateAudioResolveCache();
       return res.status(201).json(created);
     } catch (e) { if (e instanceof ZodError) return res.status(400).json({ message: 'Validation failed', issues: e.errors }); console.error('Create audio assignment error:', e); return res.status(500).json({ message: 'Failed to create audio assignment' }); }
   });
@@ -712,16 +727,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const patch = insertAudioAssignmentSchema.partial().parse(data);
       const updated = await storage.updateAudioAssignment(req.params.id, patch as any);
       if (!updated) return res.status(404).json({ message: 'Assignment not found' });
+      invalidateAudioResolveCache();
       return res.json(updated);
     } catch (e) { if (e instanceof ZodError) return res.status(400).json({ message: 'Validation failed', issues: e.errors }); console.error('Update audio assignment error:', e); return res.status(500).json({ message: 'Failed to update audio assignment' }); }
   });
   app.delete('/api/admin/audio/assignments/:id', isAdmin, async (req, res) => {
-    try { const ok = await storage.deleteAudioAssignment(req.params.id); if (!ok) return res.status(404).json({ message: 'Assignment not found' }); return res.json({ ok: true }); } catch (e) { console.error('Delete audio assignment error:', e); return res.status(500).json({ message: 'Failed to delete audio assignment' }); }
+    try {
+      const ok = await storage.deleteAudioAssignment(req.params.id);
+      if (!ok) return res.status(404).json({ message: 'Assignment not found' });
+      invalidateAudioResolveCache();
+      return res.json({ ok: true });
+    } catch (e) {
+      console.error('Delete audio assignment error:', e);
+      return res.status(500).json({ message: 'Failed to delete audio assignment' });
+    }
   });
 
   // Public audio resolution endpoint
   app.get('/api/audio/resolve', async (req, res) => {
     try {
+      // Prevent browser/proxy caching; we already cache in-memory and in the client.
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+
       // Simple per-IP rate limiting to prevent runaway loops.
       try {
         const ipRaw = (req.ip || req.headers['x-forwarded-for'] || (req as any).connection?.remoteAddress || 'unknown') as string | string[];
@@ -746,14 +775,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const cached = audioResolveCache.get(cacheKey);
       const now = Date.now();
       if (cached && cached.expiresAt > now) {
-        res.setHeader('Cache-Control', `public, max-age=${Math.floor(AUDIO_RESOLVE_CACHE_TTL_MS / 1000)}`);
         return res.json(cached.value);
       }
 
       const track = await storage.resolveAudio({ page, chapterId, characterId, codexId, locationId });
       const value = track || null;
       audioResolveCache.set(cacheKey, { value, expiresAt: now + AUDIO_RESOLVE_CACHE_TTL_MS });
-      res.setHeader('Cache-Control', `public, max-age=${Math.floor(AUDIO_RESOLVE_CACHE_TTL_MS / 1000)}`);
       return res.json(value);
     } catch (e) { console.error('Resolve audio error:', e); return res.status(500).json({ message: 'Failed to resolve audio' }); }
   });
