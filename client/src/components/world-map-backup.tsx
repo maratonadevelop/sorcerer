@@ -14,6 +14,7 @@ import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { Link } from "wouter";
 import type { Location } from "@shared/schema";
 
@@ -81,6 +82,9 @@ const regions = {
 };
 
 export default function WorldMapInteractive({ locations }: WorldMapProps) {
+  const auth = useAuth();
+  const isAdmin = !!auth?.isAdmin;
+
   // Basic states
   const [hoveredContinent, setHoveredContinent] = useState<string | null>(null);
   const [editMode, setEditMode] = useState(false);
@@ -104,6 +108,13 @@ export default function WorldMapInteractive({ locations }: WorldMapProps) {
     startMousePos: null,
     startPointPos: null
   });
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setEditMode(false);
+      setSelectedRegionForEdit(null);
+    }
+  }, [isAdmin]);
 
   // Parse clip-path string to points
   const parseClipPath = (clipPath: string) => {
@@ -392,23 +403,25 @@ export default function WorldMapInteractive({ locations }: WorldMapProps) {
       {/* Controls */}
       <CardContent className="p-6 bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-900">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <motion.button
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
-              editMode 
-                ? 'bg-red-500 hover:bg-red-600 text-white' 
-                : 'bg-blue-500 hover:bg-blue-600 text-white'
-            }`}
-            onClick={() => {
-              setEditMode(!editMode);
-              setSelectedRegionForEdit(null);
-            }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-          >
-            {editMode ? '🔒 Exit Edit' : '✏️ Edit Masks'}
-          </motion.button>
+          {isAdmin && (
+            <motion.button
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${
+                editMode 
+                  ? 'bg-red-500 hover:bg-red-600 text-white' 
+                  : 'bg-blue-500 hover:bg-blue-600 text-white'
+              }`}
+              onClick={() => {
+                setEditMode(!editMode);
+                setSelectedRegionForEdit(null);
+              }}
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+            >
+              {editMode ? '🔒 Exit Edit' : '✏️ Edit Masks'}
+            </motion.button>
+          )}
 
-          {editMode && (
+          {isAdmin && editMode && (
             <>
               <div className="text-sm text-gray-600 dark:text-gray-400">
                 {selectedRegionForEdit ? (

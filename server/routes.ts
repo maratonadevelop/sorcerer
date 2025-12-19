@@ -32,6 +32,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
+  // In-memory protections/caches
+  const audioResolveCache = new Map<string, { value: any; expiresAt: number }>();
+  const audioResolveRate = new Map<string, { count: number; resetAt: number }>();
+  const AUDIO_RESOLVE_CACHE_TTL_MS = 30 * 1000;
+  const AUDIO_RESOLVE_RATE_WINDOW_MS = 60 * 1000;
+  const AUDIO_RESOLVE_RATE_MAX = 30;
+
   // Offline user helpers (for dev / DB-down fallback)
   async function readOfflineUsers(): Promise<any[]> {
     try {
@@ -710,14 +717,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Public audio resolution endpoint
   app.get('/api/audio/resolve', async (req, res) => {
     try {
+      // Simple per-IP rate limiting to prevent runaway loops.
+      try {
+        const ipRaw = (req.ip || req.headers['x-forwarded-for'] || (req as any).connection?.remoteAddress || 'unknown') as string | string[];
+        const ip = Array.isArray(ipRaw) ? ipRaw[0] : String(ipRaw);
+        const now = Date.now();
+        const r = audioResolveRate.get(ip);
+        if (!r || now > r.resetAt) {
+          audioResolveRate.set(ip, { count: 1, resetAt: now + AUDIO_RESOLVE_RATE_WINDOW_MS });
+        } else {
+          r.count += 1;
+          if (r.count > AUDIO_RESOLVE_RATE_MAX) return res.status(429).json({ message: 'Too many audio resolve requests' });
+        }
+      } catch {}
+
       const page = typeof req.query.page === 'string' ? req.query.page : undefined;
       const chapterId = typeof req.query.chapterId === 'string' ? req.query.chapterId : undefined;
       const characterId = typeof req.query.characterId === 'string' ? req.query.characterId : undefined;
       const codexId = typeof req.query.codexId === 'string' ? req.query.codexId : undefined;
       const locationId = typeof req.query.locationId === 'string' ? req.query.locationId : undefined;
+
+      const cacheKey = JSON.stringify({ page, chapterId, characterId, codexId, locationId });
+      const cached = audioResolveCache.get(cacheKey);
+      const now = Date.now();
+      if (cached && cached.expiresAt > now) {
+        res.setHeader('Cache-Control', `public, max-age=${Math.floor(AUDIO_RESOLVE_CACHE_TTL_MS / 1000)}`);
+        return res.json(cached.value);
+      }
+
       const track = await storage.resolveAudio({ page, chapterId, characterId, codexId, locationId });
-      if (!track) return res.json(null);
-      return res.json(track);
+      const value = track || null;
+      audioResolveCache.set(cacheKey, { value, expiresAt: now + AUDIO_RESOLVE_CACHE_TTL_MS });
+      res.setHeader('Cache-Control', `public, max-age=${Math.floor(AUDIO_RESOLVE_CACHE_TTL_MS / 1000)}`);
+      return res.json(value);
     } catch (e) { console.error('Resolve audio error:', e); return res.status(500).json({ message: 'Failed to resolve audio' }); }
   });
   

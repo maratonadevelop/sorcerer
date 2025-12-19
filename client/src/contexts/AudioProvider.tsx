@@ -51,6 +51,16 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   });
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
+  // Cache audio resolution results to avoid repeated /api/audio/resolve calls.
+  const resolveCacheRef = useRef(new Map<string, { value: any; expiresAt: number }>());
+  const RESOLVE_CACHE_TTL_MS = 60 * 1000;
+
+  // Keep latest mute/volume in refs so resolve effect doesn't depend on them.
+  const mutedRef = useRef(muted);
+  const volumeRef = useRef(volume);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  useEffect(() => { volumeRef.current = volume; }, [volume]);
+
   // Ambient volume mapping: user volume (0..1) is remapped to a softer effective range
   // so background music remains unobtrusive even at max slider.
   const AMBIENT_MIN = 0.15; // floor loudness when not muted
@@ -119,10 +129,80 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
     if (page) params.set('page', page);
     if (entity) params.set(`${entity.type}Id`, entity.id);
     const q = params.toString();
+    const cacheKey = q || '__global__';
+    const cached = resolveCacheRef.current.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      const track = cached.value;
+      Promise.resolve().then(() => {
+        if (aborted) return;
+        if (!track) {
+          // No resolved track: stop any current (both refs)
+          setCurrentTrack(null);
+          currentTrackRef.current = null;
+          if (fadeTimer.current) { window.clearInterval(fadeTimer.current); fadeTimer.current = null; }
+          if (aCurrent.current) { try { aCurrent.current.pause(); } catch {} aCurrent.current = null; }
+          if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
+          setPlaying(false);
+          return;
+        }
+        // Same track? do nothing
+        if (currentTrackRef.current === track.id) return;
+        // Stop any stray 'next' audio to avoid duplicates before starting new one
+        if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
+        const mutedNow = mutedRef.current;
+        const volumeNow = volumeRef.current;
+        // Start crossfade; apply per-track fades if available
+        const nextEl = new Audio(track.fileUrl);
+        nextEl.loop = !!track.loop;
+        nextEl.muted = mutedNow;
+        nextEl.volume = 0;
+        aNext.current = nextEl;
+        nextEl.play().then(() => {
+          setAutoplayBlocked(false);
+          const fadeIn = typeof (track as any).fadeInMs === 'number' ? (track as any).fadeInMs : 600;
+          const fadeOut = typeof (track as any).fadeOutMs === 'number' ? (track as any).fadeOutMs : fadeIn;
+          const fadeMs = Math.max(fadeIn, fadeOut);
+          const startVol = (aCurrent.current ? aCurrent.current.volume : 0);
+          let startedAt = performance.now();
+          const nextTargetBase = computeEffectiveVolume(volumeNow, (track as any)?.volumeUserMax) * (mutedNow ? 0 : 1);
+          const rafStep = () => {
+            const now = performance.now();
+            const t = Math.min(1, (now - startedAt) / fadeMs);
+            nextEl.volume = nextTargetBase * t;
+            if (aCurrent.current) aCurrent.current.volume = startVol * (1 - t);
+            if (t >= 1) {
+              if (aCurrent.current) { aCurrent.current.pause(); }
+              aCurrent.current = nextEl; aNext.current = null;
+              aCurrent.current.volume = nextTargetBase;
+              setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
+              currentTrackRef.current = track.id;
+              setPlaying(true);
+              fadeTimer.current = null;
+              return;
+            }
+            fadeTimer.current = requestAnimationFrame(rafStep) as unknown as number;
+          };
+          if (fadeTimer.current) { cancelAnimationFrame(fadeTimer.current); fadeTimer.current = null; }
+          fadeTimer.current = requestAnimationFrame(rafStep) as unknown as number;
+        }).catch(() => {
+          setAutoplayBlocked(true);
+          setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
+          currentTrackRef.current = track.id;
+        });
+      });
+      return () => { aborted = true; };
+    }
+
     fetch(`/api/audio/resolve${q ? `?${q}` : ''}`)
       .then((r) => r.json())
       .then((track) => {
         if (aborted) return;
+
+        // cache resolved value (including null)
+        try {
+          resolveCacheRef.current.set(cacheKey, { value: track ?? null, expiresAt: Date.now() + RESOLVE_CACHE_TTL_MS });
+        } catch {}
+
         if (!track) {
           // No resolved track: stop any current (both refs)
           setCurrentTrack(null);
@@ -140,7 +220,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   // Start crossfade; apply per-track fades if available
   const nextEl = new Audio(track.fileUrl);
         nextEl.loop = !!track.loop;
-        nextEl.muted = muted;
+        const mutedNow = mutedRef.current;
+        const volumeNow = volumeRef.current;
+        nextEl.muted = mutedNow;
         nextEl.volume = 0;
         aNext.current = nextEl;
         nextEl.play().then(() => {
@@ -151,7 +233,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           const fadeMs = Math.max(fadeIn, fadeOut);
           const startVol = (aCurrent.current ? aCurrent.current.volume : 0);
           let startedAt = performance.now();
-          const nextTargetBase = computeEffectiveVolume(volume, (track as any)?.volumeUserMax) * (muted ? 0 : 1);
+          const nextTargetBase = computeEffectiveVolume(volumeNow, (track as any)?.volumeUserMax) * (mutedNow ? 0 : 1);
           const rafStep = () => {
             const now = performance.now();
             const t = Math.min(1, (now - startedAt) / fadeMs);
@@ -194,7 +276,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               const fadeMs = Math.max(fadeIn, fadeOut);
               const startVol = (aCurrent.current ? aCurrent.current.volume : 0);
               let startedAt = performance.now();
-              const nextTargetBase = computeEffectiveVolume(volume, (track as any)?.volumeUserMax) * (muted ? 0 : 1);
+              const nextTargetBase = computeEffectiveVolume(volumeNow, (track as any)?.volumeUserMax) * (mutedNow ? 0 : 1);
               const rafStep = () => {
                 const now = performance.now();
                 const t = Math.min(1, (now - startedAt) / fadeMs);
@@ -226,7 +308,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {})
     return () => { aborted = true; };
-  }, [page, entity, muted, volume, effectiveVolume]);
+  }, [page, entity, computeEffectiveVolume]);
 
   // Ensure playback starts if we have a track but not playing yet (e.g. after context change)
   useEffect(() => {
