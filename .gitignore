@@ -34,4 +34,5 @@ npm-debug.log
 # Keep uploads tracked but ignore large/backup files
 uploads/*.mp4.bak
 uploads/*.orig.*
+uploads/*.mp3
 

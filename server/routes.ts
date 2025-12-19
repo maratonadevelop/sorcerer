@@ -1296,8 +1296,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Public map save endpoint - saves a map package (svg, markers, masks) to uploads/maps/<id>.json
-  app.post('/api/maps', async (req, res) => {
+  // Map save endpoint - saves a map package (svg, markers, masks) to uploads/maps/<id>.json
+  // Restricted to admins to prevent unauthorized mask/map edits.
+  app.post('/api/maps', isAdmin, async (req, res) => {
     try {
       const { svg, markers, masks, name } = req.body || {};
       if (!markers || !Array.isArray(markers)) return res.status(400).json({ message: 'markers array required' });

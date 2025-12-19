@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'wouter';
+import { useAuth } from '@/hooks/useAuth';
 
 // Render a handcrafted SVG map with named continents.
 export default function InteractiveWorldMap() {
   const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number; visible: boolean }>({ text: '', x: 0, y: 0, visible: false });
+  const { isAdmin } = useAuth();
+  const canEditMasks = isAdmin;
   const [active, setActive] = useState<string | null>(null);
   const [, setLocation] = useLocation();
   const [editMasksMode, setEditMasksMode] = useState(false);
@@ -27,6 +30,16 @@ export default function InteractiveWorldMap() {
   const [multiAddMode, setMultiAddMode] = useState(false);
   const [tempAddPoints, setTempAddPoints] = useState<Point[]>([]);
 
+  useEffect(() => {
+    if (!canEditMasks && editMasksMode) {
+      setEditMasksMode(false);
+      setSelectedMask(null);
+      setSelectedVertex(null);
+      setTempAddPoints([]);
+      setMultiAddMode(false);
+    }
+  }, [canEditMasks, editMasksMode]);
+
   const onEnter = (name: string) => (e: React.MouseEvent) => {
     setActive(name);
     setTooltip({ text: name, x: e.clientX + 12, y: e.clientY + 12, visible: true });
@@ -41,7 +54,7 @@ export default function InteractiveWorldMap() {
 
   // mask vertex handlers
   const startDragVertex = (e: React.PointerEvent, maskId: string, idx: number) => {
-    if (!editMasksMode) return;
+    if (!canEditMasks || !editMasksMode) return;
     e.preventDefault();
     vertexDragRef.current = { maskId, vertexIndex: idx };
     setSelectedVertex({ maskId, idx });
@@ -129,6 +142,7 @@ export default function InteractiveWorldMap() {
 
   // add vertex at nearest segment of currently selected mask
   const addVertexAtClient = (clientX: number, clientY: number) => {
+    if (!canEditMasks) return;
     if (!selectedMask) return;
     const coords = clientToPct(clientX, clientY);
     if (!coords) return;
@@ -155,6 +169,7 @@ export default function InteractiveWorldMap() {
   };
 
   const deleteNearestVertexAtClient = (clientX: number, clientY: number) => {
+    if (!canEditMasks) return;
     if (!selectedMask) return;
     const coords = clientToPct(clientX, clientY);
     if (!coords) return;
@@ -181,7 +196,7 @@ export default function InteractiveWorldMap() {
 
   const onSvgClick = (e: React.MouseEvent) => {
     // If not editing masks, clicking the background should reset any camera zoom
-    if (!editMasksMode) {
+    if (!canEditMasks || !editMasksMode) {
       resetZoom();
       return;
     }
@@ -201,6 +216,7 @@ export default function InteractiveWorldMap() {
   };
 
   const commitMultiAdd = () => {
+    if (!canEditMasks) return;
     if (!selectedMask || tempAddPoints.length === 0) return;
     // insert each temp point into mask at nearest segment, updating mask sequentially
     setMasks(prev => {
@@ -551,6 +567,7 @@ export default function InteractiveWorldMap() {
     return () => { mounted = false; };
   }, []);
   const transformTransitionMs = (zoom.scale && zoom.scale > 1) ? ZOOM_IN_DURATION : ZOOM_OUT_DURATION;
+  const inv = zoom.scale && zoom.scale > 0 ? 1 / zoom.scale : 1;
 
   return (
     <div className="interactive-svg-wrapper relative w-full">
@@ -620,7 +637,7 @@ export default function InteractiveWorldMap() {
                 points={mask.points.map(p => `${(p.xPct/100)*1000},${(p.yPct/100)*600}`).join(' ')}
                 fill={isActive ? `${themeColorForName(mask.name)}22` : 'transparent'}
                 stroke={isActive ? themeColorForName(mask.name) : 'transparent'}
-                strokeWidth={isActive ? 2 : 0}
+                strokeWidth={isActive ? 2 * inv : 0}
                 style={{ transition: 'all 160ms ease', filter: isActive ? `drop-shadow(0 6px 18px ${themeColorForName(mask.name)}22)` : undefined, pointerEvents: 'auto', cursor: 'pointer' }}
                 onMouseEnter={onEnter(mask.name)}
                 onMouseMove={onMove}
@@ -635,10 +652,10 @@ export default function InteractiveWorldMap() {
                     x={centroidOf(mask.points).x}
                     y={centroidOf(mask.points).y}
                     fill={isActive ? '#fff9e0' : '#ffdf6b'}
-                    fontSize={20}
+                    fontSize={20 * inv}
                     fontWeight={800}
                     textAnchor="middle"
-                    style={{ pointerEvents: 'auto', fontFamily: 'var(--font-map)', letterSpacing: '0.08em', userSelect: 'none', textTransform: 'uppercase', transition: 'fill 180ms ease, filter 180ms ease', fontVariant: 'all-small-caps', filter: isActive ? `drop-shadow(0 12px 32px rgba(255,200,80,0.98)) drop-shadow(0 0 22px rgba(255,230,140,0.72))` : 'none', stroke: '#000000', strokeWidth: 0.6, strokeOpacity: 0.95, paintOrder: 'stroke' }}
+                    style={{ pointerEvents: 'auto', fontFamily: 'var(--font-map)', letterSpacing: '0.08em', userSelect: 'none', textTransform: 'uppercase', transition: 'fill 180ms ease, filter 180ms ease', fontVariant: 'all-small-caps', filter: isActive ? `drop-shadow(0 12px 32px rgba(255,200,80,0.98)) drop-shadow(0 0 22px rgba(255,230,140,0.72))` : 'none', stroke: '#000000', strokeWidth: 0.6 * inv, strokeOpacity: 0.95, paintOrder: 'stroke' }}
                     onMouseEnter={onEnter(mask.name)}
                     onMouseMove={onMove}
                     onMouseLeave={onLeave}
@@ -653,10 +670,10 @@ export default function InteractiveWorldMap() {
                 key={idx}
                 cx={(p.xPct/100)*1000}
                 cy={(p.yPct/100)*600}
-                r={8}
+                r={8 * inv}
                 fill={selectedVertex && selectedVertex.maskId === mask.id && selectedVertex.idx === idx ? '#ffd' : '#fff'}
                 stroke="#000"
-                strokeWidth={1}
+                strokeWidth={1 * inv}
                 style={{ cursor: maskEditAction === 'move' ? 'grab' : 'pointer' }}
                 onPointerDown={(e) => { if (maskEditAction === 'move') startDragVertex(e, mask.id, idx); }}
                 onPointerMove={moveVertex}
@@ -667,9 +684,9 @@ export default function InteractiveWorldMap() {
             {/* preview temporary points when adding multiple */}
             {multiAddMode && selectedMask === mask.id && tempAddPoints.length > 0 && (
               <g>
-                <polyline points={tempAddPoints.map(p => `${(p.xPct/100)*1000},${(p.yPct/100)*600}`).join(' ')} fill="none" stroke="#ffcc33" strokeWidth={2} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
+                <polyline points={tempAddPoints.map(p => `${(p.xPct/100)*1000},${(p.yPct/100)*600}`).join(' ')} fill="none" stroke="#ffcc33" strokeWidth={2 * inv} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
                 {tempAddPoints.map((p, i) => (
-                  <circle key={`t-${i}`} cx={(p.xPct/100)*1000} cy={(p.yPct/100)*600} r={6} fill="#ffcc33" opacity={0.95} style={{ pointerEvents: 'none' }} />
+                  <circle key={`t-${i}`} cx={(p.xPct/100)*1000} cy={(p.yPct/100)*600} r={6 * inv} fill="#ffcc33" opacity={0.95} style={{ pointerEvents: 'none' }} />
                 ))}
               </g>
             )}
@@ -690,93 +707,27 @@ export default function InteractiveWorldMap() {
         </svg>
     </div>
 
-      {/* small controls */}
-      <div style={{ position: 'absolute', right: 8, bottom: 8, zIndex: 200, display: 'flex', gap: 8, alignItems: 'center' }}>
-        <button className="btn ml-2" onClick={() => { setEditMasksMode(m => !m); setSelectedMask(null); }}>{editMasksMode ? 'Fechar máscaras' : 'Editar máscaras'}</button>
-        {editMasksMode && Object.values(masks).length > 0 && (
-          <>
-            <select className="btn ml-2" value={selectedMask ?? ''} onChange={(e) => setSelectedMask(e.target.value)} style={{ padding: '6px 8px' }}>
-              <option value="">Selecione máscara</option>
-              {Object.values(masks).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-            </select>
-            {selectedMask && (
-              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 6 }}>
-                <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'move'} onChange={() => setMaskEditAction('move')} /> Mover</label>
-                <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'add'} onChange={() => setMaskEditAction('add')} /> Adicionar ponto</label>
-                <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'delete'} onChange={() => setMaskEditAction('delete')} /> Remover ponto</label>
-              </div>
-            )}
-          </>
-        )}
-        {/* render masks (editable) with inverse scaling for stroke/text so they appear fixed */}
-        {(() => {
-          const inv = zoom.scale && zoom.scale > 0 ? 1 / zoom.scale : 1;
-          return Object.values(masks).map(mask => {
-            const isActive = active === mask.name;
-            return (
-              <g key={mask.id}>
-                <polygon
-                  points={mask.points.map(p => `${(p.xPct/100)*1000},${(p.yPct/100)*600}`).join(' ')}
-                  fill={isActive ? `${themeColorForName(mask.name)}22` : 'transparent'}
-                  stroke={isActive ? themeColorForName(mask.name) : 'transparent'}
-                  strokeWidth={isActive ? 2 * inv : 0}
-                  style={{ transition: 'all 160ms ease', filter: isActive ? `drop-shadow(0 6px 18px ${themeColorForName(mask.name)}22)` : undefined, pointerEvents: 'auto', cursor: 'pointer' }}
-                  onMouseEnter={onEnter(mask.name)}
-                  onMouseMove={onMove}
-                  onMouseLeave={onLeave}
-                  onClick={(e) => { e.stopPropagation(); if (!editMasksMode) openPreview(mask); else zoomToMask(mask); }}
-                />
-
-                {mask.points.length > 0 && (
-                  <>
-                    {/* single golden label with hover glow */}
-                    <text
-                      x={centroidOf(mask.points).x}
-                      y={centroidOf(mask.points).y}
-                      fill={isActive ? '#fff9e0' : '#ffdf6b'}
-                      fontSize={20 * inv}
-                      fontWeight={800}
-                      textAnchor="middle"
-                      style={{ pointerEvents: 'auto', fontFamily: 'var(--font-map)', letterSpacing: '0.08em', userSelect: 'none', textTransform: 'uppercase', transition: 'fill 180ms ease, filter 180ms ease', fontVariant: 'all-small-caps', filter: isActive ? `drop-shadow(0 12px 32px rgba(255,200,80,0.98)) drop-shadow(0 0 22px rgba(255,230,140,0.72))` : 'none', stroke: '#000000', strokeWidth: 0.6 * inv, strokeOpacity: 0.95, paintOrder: 'stroke' }}
-                      onMouseEnter={onEnter(mask.name)}
-                      onMouseMove={onMove}
-                      onMouseLeave={onLeave}
-                      onClick={(e) => { e.stopPropagation(); if (!editMasksMode) openPreview(mask); else zoomToMask(mask); }}
-                    >
-                      {mask.name.toUpperCase()}
-                    </text>
-                  </>
-                )}
-                {editMasksMode && selectedMask === mask.id && mask.points.map((p, idx) => (
-                  <circle
-                    key={idx}
-                    cx={(p.xPct/100)*1000}
-                    cy={(p.yPct/100)*600}
-                    r={8 * inv}
-                    fill={selectedVertex && selectedVertex.maskId === mask.id && selectedVertex.idx === idx ? '#ffd' : '#fff'}
-                    stroke="#000"
-                    strokeWidth={1 * inv}
-                    style={{ cursor: maskEditAction === 'move' ? 'grab' : 'pointer' }}
-                    onPointerDown={(e) => { if (maskEditAction === 'move') startDragVertex(e, mask.id, idx); }}
-                    onPointerMove={moveVertex}
-                    onPointerUp={endDragVertex}
-                    onPointerCancel={endDragVertex}
-                  />
-                ))}
-                {multiAddMode && selectedMask === mask.id && tempAddPoints.length > 0 && (
-                  <g>
-                    <polyline points={tempAddPoints.map(p => `${(p.xPct/100)*1000},${(p.yPct/100)*600}`).join(' ')} fill="none" stroke="#ffcc33" strokeWidth={2 * inv} strokeDasharray="6 4" style={{ pointerEvents: 'none' }} />
-                    {tempAddPoints.map((p, i) => (
-                      <circle key={`t-${i}`} cx={(p.xPct/100)*1000} cy={(p.yPct/100)*600} r={6 * inv} fill="#ffcc33" opacity={0.95} style={{ pointerEvents: 'none' }} />
-                    ))}
-                  </g>
-                )}
-              </g>
-            );
-          });
-        })()}
-
+      {/* small controls (admin only) */}
+      {canEditMasks ? (
+        <div style={{ position: 'absolute', right: 8, bottom: 8, zIndex: 200, display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button className="btn ml-2" onClick={() => { setEditMasksMode(m => !m); setSelectedMask(null); }}>{editMasksMode ? 'Fechar máscaras' : 'Editar máscaras'}</button>
+          {editMasksMode && Object.values(masks).length > 0 && (
+            <>
+              <select className="btn ml-2" value={selectedMask ?? ''} onChange={(e) => setSelectedMask(e.target.value)} style={{ padding: '6px 8px' }}>
+                <option value="">Selecione máscara</option>
+                {Object.values(masks).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+              {selectedMask && (
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginLeft: 6 }}>
+                  <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'move'} onChange={() => setMaskEditAction('move')} /> Mover</label>
+                  <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'add'} onChange={() => setMaskEditAction('add')} /> Adicionar ponto</label>
+                  <label style={{ fontSize: 12 }}><input type="radio" name="maskAction" checked={maskEditAction === 'delete'} onChange={() => setMaskEditAction('delete')} /> Remover ponto</label>
+                </div>
+              )}
+            </>
+          )}
         </div>
+      ) : null}
       </div>
 
       {/* tooltip element shown near cursor */}
