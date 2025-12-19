@@ -6,30 +6,17 @@ export function useAuth() {
   const query = useQuery<User | null>({
     queryKey: ['/api/auth/user'],
     retry: false,
-    // Do not cache; always ask the server
-    staleTime: 0,
-    gcTime: 0,
-    refetchOnWindowFocus: true,
-    refetchOnMount: 'always',
+    // Cache session to avoid repeated calls across renders/mounts.
+    // Login/logout already invalidates this queryKey.
+    staleTime: 5 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     queryFn: async () => {
-      const url = `/api/auth/user?_=${Date.now()}`;
-      const res = await fetch(url, {
+      const res = await fetch('/api/auth/user', {
         credentials: 'include',
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-store', ...authHeaders() },
+        headers: { ...authHeaders() },
       });
-      // Some environments may still respond 304; treat it as no change and retry once with a different nonce
-      if (res.status === 304) {
-        const res2 = await fetch(`/api/auth/user?_=${Date.now() + 1}`,
-          {
-            credentials: 'include',
-            cache: 'no-store',
-            headers: { 'Cache-Control': 'no-store', ...authHeaders() },
-          },
-        );
-        if (!res2.ok) return null;
-        return res2.json();
-      }
       if (!res.ok) return null;
       return res.json();
     },
