@@ -224,9 +224,39 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 2, baseDelayMs = 120):
       await sqlWrite`CREATE TABLE IF NOT EXISTS sessions (
         sid VARCHAR(255) NOT NULL PRIMARY KEY,
         sess JSON NOT NULL,
-        expire TIMESTAMP(6) NOT NULL
+        expire TIMESTAMPTZ NOT NULL
       )`;
       await sqlWrite`CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire)`;
+
+      // If an older deployment created sessions.expire as TEXT, connect-pg-simple
+      // will fail with: "operator does not exist: text >= timestamp with time zone".
+      // Migrate it to TIMESTAMPTZ (best-effort) with a robust cast.
+      try {
+        await sqlWrite.unsafe(`DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'sessions'
+      AND column_name = 'expire'
+      AND data_type = 'text'
+  ) THEN
+    ALTER TABLE public.sessions
+      ALTER COLUMN expire TYPE timestamptz
+      USING (
+        CASE
+          WHEN expire IS NULL OR btrim(expire) = '' THEN now()
+          WHEN expire ~ '^[0-9]+(\\.[0-9]+)?$' THEN to_timestamp(expire::double precision)
+          ELSE expire::timestamptz
+        END
+      );
+  END IF;
+END $$;`);
+      } catch {
+        // Ignore migration failures; session store may still create its own table.
+      }
+
       await sqlWrite`CREATE TABLE IF NOT EXISTS users (
         id TEXT PRIMARY KEY,
         email TEXT UNIQUE,
