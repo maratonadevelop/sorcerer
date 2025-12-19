@@ -116,7 +116,12 @@ export async function getSession() {
 
   const pgStore = connectPg(session);
   const sessionStore = new pgStore({
-    conString: process.env.DATABASE_URL,
+    // Supabase Session Pooler requires SSL in most environments.
+    // Avoid creating a manual pg.Pool; let connect-pg-simple handle it.
+    conObject: {
+      connectionString: dbUrl,
+      ssl: { rejectUnauthorized: false },
+    },
     createTableIfMissing: true,
     ttl: sessionTtl,
     tableName: "sessions",
