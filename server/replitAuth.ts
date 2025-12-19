@@ -3,7 +3,8 @@ import type { Express, RequestHandler } from "express";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 import { getDevTokenFromReq, verifyDevToken } from './devToken';
-import connectSqlite3 from 'connect-sqlite3';
+// connect-sqlite3 is lazy-loaded only when needed (not on Render production)
+// import connectSqlite3 from 'connect-sqlite3';
 import path from 'path';
 import fs from 'fs';
 
@@ -88,7 +89,7 @@ export const isDevAdmin: RequestHandler = (req, res, next) => {
   return isAdmin(req, res, next);
 };
 
-export function getSession() {
+export async function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
   // In development prefer a simple in-memory session store to avoid
   // attempting to connect to Postgres or rely on an existing SQLite schema.
@@ -160,6 +161,8 @@ export function getSession() {
   }
 
   // Local fallback if nothing else matched: sqlite-backed session store
+  // Dynamic import to avoid loading connect-sqlite3/better-sqlite3 on Render production
+  const { default: connectSqlite3 } = await import('connect-sqlite3');
   const SQLiteStore = connectSqlite3(session);
   // Allow separate auth DB file if AUTH_DB_FILE is set (default dev.sqlite)
   const authDbFile = process.env.AUTH_DB_FILE || process.env.DB_PATH || 'dev.sqlite';
@@ -187,7 +190,7 @@ export function getSession() {
 
 export async function setupAuth(app: Express) {
   app.set("trust proxy", 1);
-  app.use(getSession());
+  app.use(await getSession());
 }
 
 export const isAuthenticated: RequestHandler = (req, res, next) => {

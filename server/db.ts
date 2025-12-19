@@ -3,8 +3,9 @@ import './ipv4-first';
 import './env';
 import * as schema from "@shared/schema";
 import { randomUUID } from 'crypto';
-import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
-import Database from 'better-sqlite3';
+// SQLite imports are lazy-loaded only when needed (not on Render production)
+// import { drizzle as drizzleSqlite } from 'drizzle-orm/better-sqlite3';
+// import Database from 'better-sqlite3';
 import postgres from 'postgres';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 
@@ -258,6 +259,7 @@ async function withRetry<T>(fn: () => Promise<T>, tries = 2, baseDelayMs = 120):
 
 if (isSqlite) {
   // Initialize SQLite connection for local dev
+  // IMPORTANT: Dynamic import to avoid loading better-sqlite3 on Render production
   const sqliteFile = baseWriteUrl.replace(/^file:/, '');
   // Explicit log for Render debugging: shows the effective SQLite file chosen.
   // (No credentials involved for SQLite paths.)
@@ -279,6 +281,10 @@ if (isSqlite) {
     }
   }
 
+  // Dynamic imports for SQLite (only loaded when actually needed)
+  const { default: Database } = await import('better-sqlite3');
+  const { drizzle: drizzleSqlite } = await import('drizzle-orm/better-sqlite3');
+  
   const sqliteDb = new Database(sqliteFile);
 
   // Add a custom function to the SQLite instance for UUID generation to maintain
