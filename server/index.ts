@@ -2,6 +2,8 @@
 import './ipv4-first';
 // Load env from local or parent workspace before anything else
 import './env';
+// Optional: relax TLS verification for environments with self-signed chains
+import './insecureTls';
 import express, { type Request, Response, NextFunction } from "express";
 import compression from 'compression';
 import cors from "cors";

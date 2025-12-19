@@ -610,11 +610,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put("/api/reading-progress", async (req, res) => {
     try {
       const { sessionId, chapterId, progress } = req.body;
-      if (!sessionId || !chapterId || typeof progress !== 'number') {
+      if (!sessionId || !chapterId || typeof progress !== 'number' || !Number.isFinite(progress)) {
         res.status(400).json({ message: "Missing sessionId, chapterId or progress" });
         return;
       }
-      const updatedProgress = await storage.updateReadingProgress(sessionId, chapterId, progress);
+
+      // DB schema stores progress as INTEGER; client may send floats.
+      // Clamp to 0..100 and round to nearest int to avoid Postgres 22P02.
+      const normalizedProgress = Math.max(0, Math.min(100, Math.round(progress)));
+
+      const updatedProgress = await storage.updateReadingProgress(sessionId, chapterId, normalizedProgress);
       res.json(updatedProgress);
     } catch (error) {
       console.error("Reading progress error:", error);

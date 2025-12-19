@@ -558,11 +558,12 @@ export class DatabaseStorage implements IStorage {
 
   async updateReadingProgress(sessionId: string, chapterId: string, progress: number): Promise<ReadingProgress> {
     try {
+      const normalizedProgress = Math.max(0, Math.min(100, Math.round(Number(progress))));
       // Try to update existing record first
       const [existingProgress] = await db
         .update(readingProgress)
         .set({
-          progress,
+          progress: normalizedProgress,
           lastReadAt: new Date().toISOString(),
         } as any)
         .where(and(eq(readingProgress.sessionId, sessionId), eq(readingProgress.chapterId, chapterId)))
@@ -578,7 +579,7 @@ export class DatabaseStorage implements IStorage {
         .values({
           sessionId,
           chapterId,
-          progress,
+          progress: normalizedProgress,
           lastReadAt: new Date().toISOString(),
         } as any)
         .returning();

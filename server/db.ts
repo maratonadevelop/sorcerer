@@ -1,6 +1,7 @@
 ﻿// MUST be first - force IPv4 before any network modules load
 import './ipv4-first';
 import './env';
+import './insecureTls';
 import * as schema from "@shared/schema";
 import postgres from 'postgres';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
