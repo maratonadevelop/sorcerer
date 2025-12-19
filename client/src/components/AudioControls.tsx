@@ -4,7 +4,7 @@ import { Volume2, VolumeX, Music2, X } from 'lucide-react';
 
 // Further minimized: subtle button, no tooltip, reduced gold usage, smaller panel.
 export default function AudioControls() {
-  const { currentTrack, muted, toggleMute, volume, setVolume, autoplayBlocked } = useAudio();
+  const { currentTrack, muted, toggleMute, volume, setVolume, autoplayBlocked, play } = useAudio();
   const [open, setOpen] = useState(false);
 
   const accent = '#c8a64a';
@@ -83,7 +83,16 @@ export default function AudioControls() {
             <span style={{ color: '#666', minWidth:34, textAlign:'right' }}>{Math.round(volume*100)}%</span>
           </div>
           {autoplayBlocked && (
-            <div className="mt-2" style={{ color: '#777' }}>Clique em Tocar</div>
+            <div className="mt-2 flex items-center justify-between gap-2">
+              <div style={{ color: '#777' }}>Autoplay bloqueado</div>
+              <button
+                onClick={play}
+                className="px-2 py-1 rounded border"
+                style={{ borderColor: '#2f2f2f', color: accent, background: '#151515' }}
+              >
+                Tocar
+              </button>
+            </div>
           )}
           {/* Removed bottom close and play/pause for minimalist, always-playing behavior */}
         </div>

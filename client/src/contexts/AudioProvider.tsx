@@ -107,7 +107,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const play = useCallback(() => {
     const el = aCurrent.current || aNext.current; if (!el) return;
     el.muted = muted; applyVolumes();
-    el.play().then(() => { setPlaying(true); setAutoplayBlocked(false); }).catch(() => { setAutoplayBlocked(true); });
+    el.play()
+      .then(() => { setPlaying(true); setAutoplayBlocked(false); })
+      .catch((err) => {
+        try { console.warn('Audio play blocked/failed:', err); } catch {}
+        setAutoplayBlocked(true);
+      });
   }, [muted, applyVolumes]);
 
   const pause = useCallback(() => {
