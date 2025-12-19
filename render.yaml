@@ -9,6 +9,10 @@ services:
     plan: free
     buildCommand: npm install && npm run build
     startCommand: npm run start
+    disk:
+      name: sorcerer-uploads
+      mountPath: /var/data/uploads
+      sizeGB: 1
     envVars:
       - key: NODE_ENV
         value: production
@@ -18,6 +22,8 @@ services:
         generateValue: true
       - key: PORT
         value: 10000
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

@@ -39,6 +39,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const AUDIO_RESOLVE_RATE_WINDOW_MS = 60 * 1000;
   const AUDIO_RESOLVE_RATE_MAX = 30;
 
+  const uploadsRoot = process.env.UPLOADS_DIR
+    ? path.resolve(process.env.UPLOADS_DIR)
+    : path.resolve(process.cwd(), 'uploads');
+  const uploadsPath = (...parts: string[]) => path.join(uploadsRoot, ...parts);
+
   // Offline user helpers (for dev / DB-down fallback)
   async function readOfflineUsers(): Promise<any[]> {
     try {
@@ -420,7 +425,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const base64 = data.includes('base64,') ? data.split('base64,')[1] : data;
       const ext = path.extname(filename) || '';
       const name = `${randomUUID()}${ext}`;
-      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'avatars');
+      const uploadsDir = uploadsPath('avatars');
       await fs.promises.mkdir(uploadsDir, { recursive: true });
       const filePath = path.join(uploadsDir, name);
       await fs.promises.writeFile(filePath, Buffer.from(base64, 'base64'));
@@ -467,7 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Explicit dev-only fallback (opt-in) — helpful during demos without DB content
       if (req.query.uploadsFallback === 'true' && (!characters || characters.length === 0)) {
         try {
-          const uploadsFile = path.resolve(process.cwd(), 'uploads', 'codex_return_of_the_first_sorcerer.json');
+          const uploadsFile = uploadsPath('codex_return_of_the_first_sorcerer.json');
           if (fs.existsSync(uploadsFile)) {
             const raw = await fs.promises.readFile(uploadsFile, 'utf-8');
             const parsed = JSON.parse(raw || '{}');
@@ -1252,7 +1257,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const base64 = data.includes('base64,') ? data.split('base64,')[1] : data;
       const ext = path.extname(filename) || '';
       const name = `${randomUUID()}${ext}`;
-      const uploadsDir = path.resolve(process.cwd(), 'uploads');
+      const uploadsDir = uploadsRoot;
       await fs.promises.mkdir(uploadsDir, { recursive: true });
       const filePath = path.join(uploadsDir, name);
       await fs.promises.writeFile(filePath, Buffer.from(base64, 'base64'));
@@ -1270,7 +1275,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { svg, markers, masks, name } = req.body || {};
       if (!markers || !Array.isArray(markers)) return res.status(400).json({ message: 'markers array required' });
       const id = randomUUID();
-      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'maps');
+      const uploadsDir = uploadsPath('maps');
       await fs.promises.mkdir(uploadsDir, { recursive: true });
       const out = {
         id,
@@ -1293,7 +1298,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/maps/:id', async (req, res) => {
     try {
       const id = req.params.id;
-      const filePath = path.resolve(process.cwd(), 'uploads', 'maps', `${id}.json`);
+      const filePath = uploadsPath('maps', `${id}.json`);
       if (!fs.existsSync(filePath)) return res.status(404).json({ message: 'Map not found' });
       const content = await fs.promises.readFile(filePath, 'utf8');
       return res.type('application/json').send(content);
@@ -1306,7 +1311,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Public: return the most recently saved map (if any)
   app.get('/api/maps/latest', async (req, res) => {
     try {
-      const uploadsDir = path.resolve(process.cwd(), 'uploads', 'maps');
+      const uploadsDir = uploadsPath('maps');
       if (!fs.existsSync(uploadsDir)) return res.status(404).json({ message: 'No maps found' });
       const files = await fs.promises.readdir(uploadsDir);
       const jsonFiles = files.filter(f => f.endsWith('.json'));
@@ -1450,7 +1455,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     // Import uploaded codex JSON into the DB (dev only)
     app.post('/api/dev/import-uploads', isDevAdmin, async (req, res) => {
       try {
-        const uploadsFile = path.resolve(process.cwd(), 'uploads', 'codex_return_of_the_first_sorcerer.json');
+        const uploadsFile = uploadsPath('codex_return_of_the_first_sorcerer.json');
         if (!fs.existsSync(uploadsFile)) return res.status(404).json({ message: 'uploads file not found' });
         const raw = await fs.promises.readFile(uploadsFile, 'utf-8');
         const parsed = JSON.parse(raw || '{}');
@@ -1504,7 +1509,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     app.post('/api/dev/import-uploads-force', async (_req, res) => {
       if (process.env.NODE_ENV !== 'development') return res.status(403).json({ message: 'Not allowed' });
       try {
-        const uploadsFile = path.resolve(process.cwd(), 'uploads', 'codex_return_of_the_first_sorcerer.json');
+        const uploadsFile = uploadsPath('codex_return_of_the_first_sorcerer.json');
         if (!fs.existsSync(uploadsFile)) return res.status(404).json({ message: 'uploads file not found' });
         const raw = await fs.promises.readFile(uploadsFile, 'utf-8');
         const parsed = JSON.parse(raw || '{}');
