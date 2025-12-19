@@ -1,6 +1,15 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 
+type PersistedPlayback = {
+  fileUrl: string;
+  time: number;
+  playing: boolean;
+  savedAt: number;
+};
+
+const AUDIO_PLAYBACK_KEY = 'audio.playback';
+
 export type AudioContextShape = {
   page: string | undefined;
   setPage: (page?: string) => void;
@@ -36,6 +45,38 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const [entity, setEntity] = useState<{ type: 'chapter'|'character'|'codex'|'location', id: string } | null>(null);
   const [currentTrack, setCurrentTrack] = useState<{ id: string; title: string; fileUrl: string; loop: boolean } | null>(null);
   const currentTrackRef = useRef<string | null>(null);
+  const currentTrackFileUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    currentTrackFileUrlRef.current = currentTrack?.fileUrl ?? null;
+  }, [currentTrack]);
+
+  // Persist/restore playback position (best-effort; autoplay policies may still block play on refresh).
+  const playbackLoadedRef = useRef(false);
+  const playbackRef = useRef<PersistedPlayback | null>(null);
+  if (!playbackLoadedRef.current) {
+    playbackLoadedRef.current = true;
+    try {
+      const raw = localStorage.getItem(AUDIO_PLAYBACK_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (
+          parsed &&
+          typeof parsed.fileUrl === 'string' &&
+          typeof parsed.time === 'number' &&
+          typeof parsed.playing === 'boolean'
+        ) {
+          playbackRef.current = {
+            fileUrl: parsed.fileUrl,
+            time: Math.max(0, parsed.time),
+            playing: parsed.playing,
+            savedAt: typeof parsed.savedAt === 'number' ? parsed.savedAt : Date.now(),
+          };
+        }
+      }
+    } catch {
+      playbackRef.current = null;
+    }
+  }
   const [playing, setPlaying] = useState(false);
   // Start unmuted by default (unless user previously chose mute)
   const [muted, setMuted] = useState<boolean>(() => {
@@ -97,6 +138,52 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const aCurrent = useRef<HTMLAudioElement | null>(null);
   const aNext = useRef<HTMLAudioElement | null>(null);
   const fadeTimer = useRef<number | null>(null);
+
+  const persistPlayback = useCallback(() => {
+    const el = aCurrent.current || aNext.current;
+    const fileUrl = currentTrackFileUrlRef.current;
+    if (!el || !fileUrl) return;
+    const time = isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0;
+    const payload: PersistedPlayback = {
+      fileUrl,
+      time,
+      playing: !el.paused,
+      savedAt: Date.now(),
+    };
+    playbackRef.current = payload;
+    try {
+      localStorage.setItem(AUDIO_PLAYBACK_KEY, JSON.stringify(payload));
+    } catch {}
+  }, []);
+
+  const maybeApplyResumeTime = useCallback((el: HTMLAudioElement, track: { fileUrl: string }) => {
+    const saved = playbackRef.current;
+    if (!saved) return;
+    if (saved.fileUrl !== track.fileUrl) return;
+    const desired = saved.time;
+    if (!isFinite(desired) || desired <= 0) return;
+
+    const apply = () => {
+      try {
+        const duration = isFinite(el.duration) ? el.duration : 0;
+        const safeTime = duration > 0 ? Math.min(desired, Math.max(0, duration - 0.25)) : desired;
+        if (safeTime > 0) el.currentTime = safeTime;
+      } catch {}
+    };
+
+    try {
+      if (el.readyState >= 1) {
+        apply();
+        return;
+      }
+    } catch {}
+
+    const onLoaded = () => {
+      el.removeEventListener('loadedmetadata', onLoaded);
+      apply();
+    };
+    el.addEventListener('loadedmetadata', onLoaded);
+  }, []);
 
   const setPage = useCallback((p?: string) => _setPage(p), []);
   const applyVolumes = useCallback(() => {
@@ -162,20 +249,34 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           // No resolved track: stop any current (both refs)
           setCurrentTrack(null);
           currentTrackRef.current = null;
+          currentTrackFileUrlRef.current = null;
           if (fadeTimer.current) { window.clearInterval(fadeTimer.current); fadeTimer.current = null; }
           if (aCurrent.current) { try { aCurrent.current.pause(); } catch {} aCurrent.current = null; }
           if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
           setPlaying(false);
           return;
         }
-        // Same track? do nothing
-        if (currentTrackRef.current === track.id) return;
+        // Same track? do nothing (treat same fileUrl as same track to avoid restarts)
+        const sameId = currentTrackRef.current === track.id;
+        const sameFile = currentTrackFileUrlRef.current && currentTrackFileUrlRef.current === track.fileUrl;
+        if (sameId || sameFile) {
+          if (sameFile && aCurrent.current) {
+            aCurrent.current.loop = !!track.loop;
+          }
+          if (!sameId) {
+            setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
+            currentTrackRef.current = track.id;
+            currentTrackFileUrlRef.current = track.fileUrl;
+          }
+          return;
+        }
         // Stop any stray 'next' audio to avoid duplicates before starting new one
         if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
         const mutedNow = mutedRef.current;
         const volumeNow = volumeRef.current;
         // Start crossfade; apply per-track fades if available
         const nextEl = new Audio(track.fileUrl);
+        maybeApplyResumeTime(nextEl, track);
         nextEl.loop = !!track.loop;
         nextEl.muted = mutedNow;
         nextEl.volume = 0;
@@ -199,7 +300,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               aCurrent.current.volume = nextTargetBase;
               setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
               currentTrackRef.current = track.id;
+              currentTrackFileUrlRef.current = track.fileUrl;
               setPlaying(true);
+              persistPlayback();
               fadeTimer.current = null;
               return;
             }
@@ -211,6 +314,7 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           setAutoplayBlocked(true);
           setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
           currentTrackRef.current = track.id;
+          currentTrackFileUrlRef.current = track.fileUrl;
         });
       });
       return () => { aborted = true; };
@@ -230,18 +334,32 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
           // No resolved track: stop any current (both refs)
           setCurrentTrack(null);
           currentTrackRef.current = null;
+          currentTrackFileUrlRef.current = null;
           if (fadeTimer.current) { window.clearInterval(fadeTimer.current); fadeTimer.current = null; }
           if (aCurrent.current) { try { aCurrent.current.pause(); } catch {} aCurrent.current = null; }
           if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
           setPlaying(false);
           return;
         }
-        // Same track? do nothing
-        if (currentTrackRef.current === track.id) return;
+        // Same track? do nothing (treat same fileUrl as same track to avoid restarts)
+        const sameId = currentTrackRef.current === track.id;
+        const sameFile = currentTrackFileUrlRef.current && currentTrackFileUrlRef.current === track.fileUrl;
+        if (sameId || sameFile) {
+          if (sameFile && aCurrent.current) {
+            aCurrent.current.loop = !!track.loop;
+          }
+          if (!sameId) {
+            setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
+            currentTrackRef.current = track.id;
+            currentTrackFileUrlRef.current = track.fileUrl;
+          }
+          return;
+        }
   // Stop any stray 'next' audio to avoid duplicates before starting new one
   if (aNext.current) { try { aNext.current.pause(); } catch {} aNext.current = null; }
   // Start crossfade; apply per-track fades if available
-  const nextEl = new Audio(track.fileUrl);
+    const nextEl = new Audio(track.fileUrl);
+      maybeApplyResumeTime(nextEl, track);
         nextEl.loop = !!track.loop;
         const mutedNow = mutedRef.current;
         const volumeNow = volumeRef.current;
@@ -268,7 +386,9 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               aCurrent.current.volume = nextTargetBase;
               setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
               currentTrackRef.current = track.id;
+              currentTrackFileUrlRef.current = track.fileUrl;
               setPlaying(true);
+              persistPlayback();
               fadeTimer.current = null;
               return;
             }
@@ -310,7 +430,10 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
                   aCurrent.current = nextEl; aNext.current = null;
                   aCurrent.current.volume = nextTargetBase;
                   setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
-                  currentTrackRef.current = track.id; setPlaying(true);
+                  currentTrackRef.current = track.id;
+                  currentTrackFileUrlRef.current = track.fileUrl;
+                  setPlaying(true);
+                  persistPlayback();
                   fadeTimer.current = null; return;
                 }
                 fadeTimer.current = requestAnimationFrame(rafStep) as unknown as number;
@@ -321,17 +444,49 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
               setAutoplayBlocked(true);
               setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
               currentTrackRef.current = track.id;
+              currentTrackFileUrlRef.current = track.fileUrl;
             });
           } catch {
             setAutoplayBlocked(true);
             setCurrentTrack({ id: track.id, title: track.title, fileUrl: track.fileUrl, loop: !!track.loop, ...(track as any) });
             currentTrackRef.current = track.id;
+            currentTrackFileUrlRef.current = track.fileUrl;
           }
         });
       })
       .catch(() => {})
     return () => { aborted = true; };
-  }, [page, entity, computeEffectiveVolume]);
+  }, [page, entity, computeEffectiveVolume, maybeApplyResumeTime, persistPlayback]);
+
+  // Persist playback position periodically + on tab hide/unload.
+  useEffect(() => {
+    let lastWriteAt = 0;
+    let lastTime = -1;
+
+    const maybePersist = () => {
+      const el = aCurrent.current || aNext.current;
+      const fileUrl = currentTrackFileUrlRef.current;
+      if (!el || !fileUrl) return;
+      const time = isFinite(el.currentTime) ? Math.max(0, el.currentTime) : 0;
+      const now = Date.now();
+      if (now - lastWriteAt < 1500 && Math.abs(time - lastTime) < 0.75) return;
+      lastWriteAt = now;
+      lastTime = time;
+      persistPlayback();
+    };
+
+    const interval = window.setInterval(maybePersist, 2000);
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') maybePersist();
+    };
+    window.addEventListener('beforeunload', maybePersist);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('beforeunload', maybePersist);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [persistPlayback]);
 
   // Ensure playback starts if we have a track but not playing yet (e.g. after context change)
   useEffect(() => {
@@ -402,11 +557,12 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     return () => {
       try {
+        persistPlayback();
         if (aCurrent.current) { aCurrent.current.pause(); aCurrent.current.src = ''; }
         if (aNext.current) { aNext.current.pause(); aNext.current.src = ''; }
       } catch {}
     };
-  }, []);
+  }, [persistPlayback]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
